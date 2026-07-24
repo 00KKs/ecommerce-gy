@@ -1,4 +1,4 @@
 package com.example.e_commerce.service;
 
-public class ShippingAddressService {
+public class AddressService {
 }
