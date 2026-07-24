@@ -15,16 +15,16 @@ public class Member {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(nullable = false, name = "memeber_id")
-    private Long memberId;
+    private Long id;
 
     @Column(nullable = false, name = "member_name")
-    private String memberName;
+    private String name;
 
     @Column(nullable = false, name = "member_email")
-    private String memberEmail;
+    private String email;
 
     @Column(nullable = false, name = "member_password")
-    private String memberPassword;
+    private String password;
 
     @Enumerated(EnumType.STRING)
     private Role role = Role.BUYER;
@@ -32,10 +32,10 @@ public class Member {
     @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Address> addresses = new ArrayList<>();
 
-    public Member(String memberEmail, String memberPassword, String memberName) {
-        this.memberEmail = memberEmail;
-        this.memberPassword = memberPassword;
-        this.memberName = memberName;
+    public Member(String email, String password, String name) {
+        this.email = email;
+        this.password = password;
+        this.name = name;
         this.role = Role.BUYER;
     }
 
