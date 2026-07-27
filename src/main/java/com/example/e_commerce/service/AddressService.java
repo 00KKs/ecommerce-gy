@@ -78,6 +78,7 @@ public class AddressService {
     }
 
     // 기본 배송지 지정
+    @Transactional
     public void setDefault(Long memberId, Long addressId) {
         Member member = getMember(memberId);
         Address address = getOwnedAddress(addressId, memberId);
