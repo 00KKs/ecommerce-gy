@@ -20,7 +20,7 @@ public class Member {
     @Column(nullable = false, name = "member_name")
     private String name;
 
-    @Column(nullable = false, name = "member_email")
+    @Column(nullable = false, name = "member_email", unique = true)
     private String email;
 
     @Column(nullable = false, name = "member_password")
@@ -43,5 +43,4 @@ public class Member {
         addresses.add(address);
         address.setMember(this);
     }
-
 }
