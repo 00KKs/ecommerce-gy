@@ -2,10 +2,14 @@ package com.example.e_commerce.repository;
 
 import com.example.e_commerce.entity.Category;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
 
 public interface CategoryRepository extends JpaRepository<Category, Long> {
 
     List<Category> findByParentIsNull();
+
+    @Query("select c from Category c left join fetch c.parent")
+    List<Category> findAllWithParent();
 }
