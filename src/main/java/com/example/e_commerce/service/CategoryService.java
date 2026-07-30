@@ -16,7 +16,7 @@ public class CategoryService {
     private final CategoryRepository categoryRepository;
 
     @Transactional(readOnly = true)
-    public List<CategoryResponse> getAllCategories(Long id) {
+    public List<CategoryResponse> getAllCategories() {
         List<Category> roots = categoryRepository.findByParentIsNull();
         return roots.stream()
                 .map(CategoryResponse::new)
