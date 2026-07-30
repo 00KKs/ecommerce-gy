@@ -17,8 +17,10 @@ public class CategoryService {
 
     @Transactional(readOnly = true)
     public List<CategoryResponse> getAllCategories() {
-        List<Category> roots = categoryRepository.findByParentIsNull();
-        return roots.stream()
+        List<Category> all = categoryRepository.findAllWithParent();
+
+        return all.stream()
+                .filter(c -> c.getParent() == null)
                 .map(CategoryResponse::new)
                 .toList();
     }
