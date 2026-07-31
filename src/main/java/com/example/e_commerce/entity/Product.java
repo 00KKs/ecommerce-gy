@@ -33,4 +33,9 @@ public class Product {
         this.category = category;
         this.status = ProductStatus.DRAFT;
     }
+
+    public void updateInfo(String name, String description) {
+        this.name = name;
+        this.description = description;
+    }
 }
