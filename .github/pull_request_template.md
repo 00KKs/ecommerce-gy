@@ -7,9 +7,6 @@
 [//]: # "어떤 변경사항이 있었나요? 체크해주세요 !"
 
 - [ ] 🐞 BugFix Something isn't working
-- [ ] 💻 CrossBrowsing Browser compatibility
-- [ ] 🌏 Deploy Deploy
-- [ ] 🎨 Design Markup & styling
 - [ ] 📃 Docs Documentation writing and editing (README.md, etc.)
 - [ ] ✨ Feature Feature
 - [ ] 🔨 Refactor Code refactoring
