@@ -4,6 +4,7 @@ import com.example.e_commerce.entity.Category;
 import lombok.Getter;
 
 import java.util.List;
+import java.util.Map;
 
 @Getter
 public class CategoryResponse {
@@ -12,11 +13,13 @@ public class CategoryResponse {
     private String name;
     private List<CategoryResponse> children;
 
-    public CategoryResponse(Category category) {
+    public CategoryResponse(Category category, Map<Long, List<Category>> childrenByParentId) {
         this.id = category.getId();
         this.name = category.getName();
-        this.children = category.getChildren().stream()
-                .map(CategoryResponse::new)
+        this.children = childrenByParentId
+                .getOrDefault(category.getId(), List.of())
+                .stream()
+                .map(c -> new CategoryResponse(c, childrenByParentId))
                 .toList();
     }
 }
