@@ -8,6 +8,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -17,11 +19,15 @@ public class CategoryService {
 
     @Transactional(readOnly = true)
     public List<CategoryResponse> getAllCategories() {
-        List<Category> all = categoryRepository.findAllWithParent();
+        List<Category> all = categoryRepository.findAll();
+
+        Map<Long, List<Category>> childrenByParentId = all.stream()
+                .filter(c -> c.getParent() != null)
+                .collect(Collectors.groupingBy(c -> c.getParent().getId()));
 
         return all.stream()
                 .filter(c -> c.getParent() == null)
-                .map(CategoryResponse::new)
+                .map(c -> new CategoryResponse(c, childrenByParentId))
                 .toList();
     }
 }
