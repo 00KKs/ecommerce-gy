@@ -1,9 +1,9 @@
 package com.example.e_commerce.controller;
 
 import com.example.e_commerce.auth.CustomUserDetail;
-import com.example.e_commerce.dto.request.AddressCreateRequest;
-import com.example.e_commerce.dto.request.AddressUpdateRequest;
-import com.example.e_commerce.dto.response.AddressResponse;
+import com.example.e_commerce.dto.request.Address.AddressCreateRequest;
+import com.example.e_commerce.dto.request.Address.AddressUpdateRequest;
+import com.example.e_commerce.dto.response.Address.AddressResponse;
 import com.example.e_commerce.service.AddressService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
