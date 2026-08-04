@@ -1,15 +1,19 @@
 package com.example.e_commerce.service;
 
-import com.example.e_commerce.dto.request.ProductCreateRequest;
-import com.example.e_commerce.dto.request.ProductUpdateRequest;
-import com.example.e_commerce.dto.response.ProductUpdateResponse;
-import com.example.e_commerce.entity.Category;
-import com.example.e_commerce.entity.Product;
+import com.example.e_commerce.dto.request.Product.ProductCreateRequest;
+import com.example.e_commerce.dto.request.Product.ProductStatusRequest;
+import com.example.e_commerce.dto.request.Product.ProductUpdateRequest;
+import com.example.e_commerce.dto.response.Product.ProductDetailResponse;
+import com.example.e_commerce.dto.response.Product.ProductStatusResponse;
+import com.example.e_commerce.dto.response.Product.ProductUpdateResponse;
+import com.example.e_commerce.entity.*;
 import com.example.e_commerce.repository.CategoryRepository;
 import com.example.e_commerce.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -38,5 +42,30 @@ public class ProductService {
 
         product.updateInfo(request.getName(), request.getDescription());
         return new ProductUpdateResponse(product);
+    }
+
+    @Transactional(readOnly = true)
+    public ProductDetailResponse getProductDetail(Long productId) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다."));
+
+        if (product.getStatus() != ProductStatus.SELLING) {
+            throw new IllegalArgumentException("판매 중인 상품이 아닙니다.");
+        }
+
+        List<Sku> sellingSkus = product.getSkus().stream()
+                .filter(sku -> sku.getStatus() == SkuStatus.SELLING)
+                .toList();
+
+        return new ProductDetailResponse(product, sellingSkus);
+    }
+
+    @Transactional
+    public ProductStatusResponse changeStatus(Long productId, ProductStatusRequest request) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다."));
+
+        product.changeStatus(ProductStatus.valueOf(request.getStatus()));
+        return new ProductStatusResponse(product);
     }
 }

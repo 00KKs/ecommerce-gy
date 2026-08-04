@@ -31,7 +31,7 @@ public class Sku {
         this.product = product;
         this.optionName = optionName;
         this.price = price;
-        this.status = SkuStatus.SELLING;
+        this.status = SkuStatus.STOPPED;
     }
 
     public void changeStatus(SkuStatus status) {
