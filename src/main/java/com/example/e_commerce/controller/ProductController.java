@@ -4,11 +4,15 @@ import com.example.e_commerce.dto.request.Product.ProductCreateRequest;
 import com.example.e_commerce.dto.request.Product.ProductStatusRequest;
 import com.example.e_commerce.dto.request.Product.ProductUpdateRequest;
 import com.example.e_commerce.dto.response.Product.ProductDetailResponse;
+import com.example.e_commerce.dto.response.Product.ProductListResponse;
 import com.example.e_commerce.dto.response.Product.ProductStatusResponse;
 import com.example.e_commerce.dto.response.Product.ProductUpdateResponse;
+import com.example.e_commerce.entity.Product;
 import com.example.e_commerce.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
@@ -20,6 +24,11 @@ public class ProductController {
     @GetMapping("/{productId}")
     public ProductDetailResponse detail(@PathVariable Long productId) {
         return productService.getProductDetail(productId);
+    }
+
+    @GetMapping(params = "categoryId")
+    public List<ProductListResponse> listByCategory(@RequestParam Long categoryId) {
+        return productService.getProductsByCategory(categoryId);
     }
 
     @PostMapping

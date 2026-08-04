@@ -4,6 +4,7 @@ import com.example.e_commerce.dto.request.Product.ProductCreateRequest;
 import com.example.e_commerce.dto.request.Product.ProductStatusRequest;
 import com.example.e_commerce.dto.request.Product.ProductUpdateRequest;
 import com.example.e_commerce.dto.response.Product.ProductDetailResponse;
+import com.example.e_commerce.dto.response.Product.ProductListResponse;
 import com.example.e_commerce.dto.response.Product.ProductStatusResponse;
 import com.example.e_commerce.dto.response.Product.ProductUpdateResponse;
 import com.example.e_commerce.entity.*;
@@ -58,6 +59,22 @@ public class ProductService {
                 .toList();
 
         return new ProductDetailResponse(product, sellingSkus);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProductListResponse> getProductsByCategory(Long categoryId) {
+        List<Product> products = productRepository.findByCategoryIdAndStatusWithSkus(categoryId, ProductStatus.SELLING);
+
+        return products.stream()
+                .map(product -> {
+                    int lowestPrice = product.getSkus().stream()
+                            .filter(sku -> sku.getStatus() == SkuStatus.SELLING)
+                            .mapToInt(Sku::getPrice)
+                            .min()
+                            .orElse(0);
+                    return new ProductListResponse(product.getId(), product.getName(), lowestPrice);
+                })
+                .toList();
     }
 
     @Transactional
