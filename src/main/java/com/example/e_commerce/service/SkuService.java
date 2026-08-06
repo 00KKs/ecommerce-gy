@@ -8,6 +8,7 @@ import com.example.e_commerce.dto.response.Sku.SkuPriceResponse;
 import com.example.e_commerce.dto.response.Sku.SkuResponse;
 import com.example.e_commerce.dto.response.Sku.SkuStatusResponse;
 import com.example.e_commerce.entity.Product;
+import com.example.e_commerce.entity.ProductStatus;
 import com.example.e_commerce.entity.Sku;
 import com.example.e_commerce.entity.SkuStatus;
 import com.example.e_commerce.repository.ProductRepository;
@@ -38,6 +39,21 @@ public class SkuService {
 
     @Transactional(readOnly = true)
     public List<SkuResponse> getSkus(Long productId) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다."));
+
+        if (product.getStatus() != ProductStatus.SELLING) {
+            throw new IllegalArgumentException("상품을 찾을 수 없습니다.");
+        }
+
+        return product.getSkus().stream()
+                .filter(sku -> sku.getStatus() == SkuStatus.SELLING)
+                .map(SkuResponse::new)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<SkuResponse> getSkusForAdmin(Long productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다."));
 
