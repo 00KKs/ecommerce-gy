@@ -6,9 +6,9 @@ import lombok.Getter;
 public class ProductListResponse {
     private Long id;
     private String name;
-    private int lowestPrice;
+    private Integer lowestPrice;
 
-    public ProductListResponse(Long id, String name, int lowestPrice) {
+    public ProductListResponse(Long id, String name, Integer lowestPrice) {
         this.id = id;
         this.name = name;
         this.lowestPrice = lowestPrice;

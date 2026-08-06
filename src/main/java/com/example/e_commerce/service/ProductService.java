@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.OptionalInt;
 
 @Service
 @RequiredArgsConstructor
@@ -67,12 +68,12 @@ public class ProductService {
 
         return products.stream()
                 .map(product -> {
-                    int lowestPrice = product.getSkus().stream()
+                    OptionalInt lowestPrice = product.getSkus().stream()
                             .filter(sku -> sku.getStatus() == SkuStatus.SELLING)
                             .mapToInt(Sku::getPrice)
-                            .min()
-                            .orElse(0);
-                    return new ProductListResponse(product.getId(), product.getName(), lowestPrice);
+                            .min();
+                    return new ProductListResponse(product.getId(), product.getName(),
+                            lowestPrice.isPresent() ? lowestPrice.getAsInt() : null);
                 })
                 .toList();
     }
