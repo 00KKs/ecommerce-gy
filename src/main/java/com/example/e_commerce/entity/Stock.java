@@ -28,4 +28,15 @@ public class Stock {
     public void increase(int amount) {
         this.quantity += amount;
     }
+
+    public void decrease(int amount) {
+        if(this.quantity < amount) {
+            throw new IllegalArgumentException("재고가 부족합니다.");
+        }
+        this.quantity -= amount;
+    }
+
+    public void restore(int amount) {
+        this.quantity += amount;
+    }
 }
