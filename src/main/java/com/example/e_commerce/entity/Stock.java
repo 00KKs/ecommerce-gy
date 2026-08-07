@@ -1,0 +1,31 @@
+package com.example.e_commerce.entity;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+@Entity
+@NoArgsConstructor
+@Getter
+public class Stock {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "sku_id", nullable = false, unique = true)
+    private Sku sku;
+
+    @Column(nullable = false)
+    private int quantity;
+
+    public Stock(Sku sku, int quantity) {
+        this.sku = sku;
+        this.quantity = quantity;
+    }
+
+    public void increase(int amount) {
+        this.quantity += amount;
+    }
+}

@@ -7,12 +7,10 @@ import com.example.e_commerce.dto.response.Sku.SkuCreateResponse;
 import com.example.e_commerce.dto.response.Sku.SkuPriceResponse;
 import com.example.e_commerce.dto.response.Sku.SkuResponse;
 import com.example.e_commerce.dto.response.Sku.SkuStatusResponse;
-import com.example.e_commerce.entity.Product;
-import com.example.e_commerce.entity.ProductStatus;
-import com.example.e_commerce.entity.Sku;
-import com.example.e_commerce.entity.SkuStatus;
+import com.example.e_commerce.entity.*;
 import com.example.e_commerce.repository.ProductRepository;
 import com.example.e_commerce.repository.SkuRepository;
+import com.example.e_commerce.repository.StockRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +23,7 @@ public class SkuService {
 
     private final ProductRepository productRepository;
     private final SkuRepository skuRepository;
+    private final StockRepository stockRepository;
 
     @Transactional
     public SkuCreateResponse createSku(Long productId, SkuCreateRequest request) {
@@ -33,6 +32,7 @@ public class SkuService {
 
         Sku sku = product.addSku(request.getOptionName(), request.getPrice());
         skuRepository.save(sku);
+        stockRepository.save(new Stock(sku, 0));
 
         return new SkuCreateResponse(sku.getId());
     }
