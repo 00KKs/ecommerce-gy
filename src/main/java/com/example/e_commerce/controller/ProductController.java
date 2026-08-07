@@ -1,11 +1,12 @@
 package com.example.e_commerce.controller;
 
-import com.example.e_commerce.dto.request.ProductCreateRequest;
-import com.example.e_commerce.dto.request.ProductUpdateRequest;
-import com.example.e_commerce.dto.response.ProductUpdateResponse;
+import com.example.e_commerce.dto.response.Product.ProductDetailResponse;
+import com.example.e_commerce.dto.response.Product.ProductListResponse;
 import com.example.e_commerce.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
@@ -14,13 +15,13 @@ public class ProductController {
 
     private final ProductService productService;
 
-    @PostMapping
-    public void create(@RequestBody ProductCreateRequest request) {
-        productService.createProduct(request);
+    @GetMapping("/{productId}")
+    public ProductDetailResponse detail(@PathVariable Long productId) {
+        return productService.getProductDetail(productId);
     }
 
-    @PostMapping("/{productId}/update")
-    public ProductUpdateResponse update(@PathVariable Long productId, @RequestBody ProductUpdateRequest request) {
-        return productService.updateProduct(productId, request);
+    @GetMapping(params = "categoryId")
+    public List<ProductListResponse> listByCategory(@RequestParam Long categoryId) {
+        return productService.getProductsByCategory(categoryId);
     }
 }

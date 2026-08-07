@@ -27,6 +27,7 @@ public class SecurityConfig {
                                 "/swagger-resources/**",
                                 "/api/products/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/categories").permitAll()
+                        .requestMatchers("/api/admin/**").hasAuthority("ADMIN")
                         .anyRequest().authenticated()
                 );
         return http.build();

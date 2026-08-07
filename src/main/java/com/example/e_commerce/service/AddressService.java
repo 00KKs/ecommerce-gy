@@ -1,8 +1,8 @@
 package com.example.e_commerce.service;
 
-import com.example.e_commerce.dto.request.AddressCreateRequest;
-import com.example.e_commerce.dto.request.AddressUpdateRequest;
-import com.example.e_commerce.dto.response.AddressResponse;
+import com.example.e_commerce.dto.request.Address.AddressCreateRequest;
+import com.example.e_commerce.dto.request.Address.AddressUpdateRequest;
+import com.example.e_commerce.dto.response.Address.AddressResponse;
 import com.example.e_commerce.entity.Address;
 import com.example.e_commerce.entity.Member;
 import com.example.e_commerce.repository.AddressRepository;
