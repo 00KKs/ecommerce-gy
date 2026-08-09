@@ -8,8 +8,6 @@ import java.util.List;
 
 public interface CategoryRepository extends JpaRepository<Category, Long> {
 
-    List<Category> findByParentIsNull();
-
     @Query("select c from Category c left join fetch c.parent")
     List<Category> findAllWithParent();
 }
