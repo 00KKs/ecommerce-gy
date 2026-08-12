@@ -3,6 +3,7 @@ package com.example.e_commerce.controller;
 import com.example.e_commerce.dto.request.Stock.StockInboundRequest;
 import com.example.e_commerce.dto.response.Stock.StockResponse;
 import com.example.e_commerce.service.StockService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,7 +21,7 @@ public class StockController {
 
     @PostMapping("/inbound")
     public StockResponse inbound(@PathVariable Long skuId,
-                                 @RequestBody StockInboundRequest request) {
+                                 @Valid @RequestBody StockInboundRequest request) {
         return stockService.inbound(skuId, request);
     }
 }
