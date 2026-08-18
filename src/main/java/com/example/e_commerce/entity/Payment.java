@@ -26,9 +26,10 @@ public class Payment {
 
     private String transactionId;
 
-    public Payment(Order order, int amount, PaymentStatus status) {
+    public Payment(Order order, int amount, PaymentStatus status, String transactionId) {
         this.order = order;
         this.amount = amount;
         this.status = status;
+        this.transactionId = transactionId;
     }
 }
