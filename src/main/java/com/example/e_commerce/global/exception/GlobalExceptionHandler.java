@@ -19,4 +19,10 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ErrorResponse("서버 오류가 발생했습니다."));
     }
+
+    @ExceptionHandler(OutOfStockException.class)
+    public ResponseEntity<ErrorResponse> handleOutOfStock(OutOfStockException e) {
+        ErrorResponse error = new ErrorResponse("OUT_OF_STOCK", e.getMessage());
+        return ResponseEntity.badRequest().body(error);
+    }
 }
