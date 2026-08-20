@@ -8,12 +8,7 @@ import java.util.List;
 @Getter
 @NoArgsConstructor
 public class OrderCreateRequest {
-    private List<OrderItemRequest> items;
 
-    @Getter
-    @NoArgsConstructor
-    public static class OrderItemRequest {
-        private Long skuId;
-        private int quantity;
-    }
+    private Long skuId;
+    private int quantity;
 }

@@ -24,12 +24,12 @@ public class Payment {
     @Column(nullable = false)
     private PaymentStatus status;
 
-    private String transactionId;
+    private String paymentKey;
 
-    public Payment(Order order, int amount, PaymentStatus status, String transactionId) {
+    public Payment(Order order, int amount, PaymentStatus status, String paymentKey) {
         this.order = order;
         this.amount = amount;
         this.status = status;
-        this.transactionId = transactionId;
+        this.paymentKey = paymentKey;
     }
 }

@@ -8,11 +8,11 @@ import java.util.UUID;
 public class FakePaymentGateway {
 
     public PaymentResult requestPayment(Long orderId, int amount) {
-        String transactionId = UUID.randomUUID().toString();
-        return new PaymentResult(true, transactionId);
+        String paymentKey = UUID.randomUUID().toString();
+        return new PaymentResult(true, paymentKey);
     }
 
-    public record PaymentResult(boolean success, String transactionId) {
+    public record PaymentResult(boolean success, String paymentKey) {
 
     }
 }
