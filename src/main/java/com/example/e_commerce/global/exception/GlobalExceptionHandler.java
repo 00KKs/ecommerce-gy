@@ -21,7 +21,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(OutOfStockException.class)
     public ResponseEntity<ErrorResponse> handleOutOfStock(OutOfStockException e) {
-        ErrorResponse error = new ErrorResponse("OUT_OF_STOCK", e.getMessage());
-        return ResponseEntity.badRequest().body(error);
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse("OUT_OF_STOCK", e.getMessage()));
     }
 }
