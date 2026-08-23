@@ -5,6 +5,7 @@ import com.example.e_commerce.dto.request.Order.OrderCreateRequest;
 import com.example.e_commerce.dto.response.Order.OrderDetailResponse;
 import com.example.e_commerce.dto.response.OrderCreateResponse;
 import com.example.e_commerce.service.OrderService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -20,7 +21,7 @@ public class OrderController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public OrderCreateResponse createOrder(@AuthenticationPrincipal CustomUserDetail user,
-                                           @RequestBody OrderCreateRequest request) {
+                                           @Valid @RequestBody OrderCreateRequest request) {
         return orderService.createOrder(user.getMemberId(), request);
     }
 
