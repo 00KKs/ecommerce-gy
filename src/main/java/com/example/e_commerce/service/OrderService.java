@@ -43,7 +43,7 @@ public class OrderService {
         Sku sku = skuRepository.findById(request.getSkuId())
                 .orElseThrow(() -> new IllegalArgumentException("SKU를 찾을 수 없습니다."));
 
-        Stock stock = stockRepository.findBySkuId(sku.getId())
+        Stock stock = stockRepository.findBySkuIdForUpdate(sku.getId())
                 .orElseThrow(() -> new IllegalArgumentException("재고 정보를 찾을 수 없습니다."));
 
         stock.decrease(request.getQuantity());

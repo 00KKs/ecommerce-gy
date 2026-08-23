@@ -30,6 +30,7 @@ public class SecurityConfig {
                 .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/categories").permitAll()
                         .requestMatchers("/api/admin/**").permitAll()
+                        .anyRequest().authenticated()
                 );
         return http.build();
     }
