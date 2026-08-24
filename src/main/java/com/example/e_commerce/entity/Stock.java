@@ -1,5 +1,6 @@
 package com.example.e_commerce.entity;
 
+import com.example.e_commerce.global.exception.OutOfStockException;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -33,8 +34,11 @@ public class Stock {
     }
 
     public void decrease(int amount) {
+        if (amount <= 0) {
+            throw new IllegalArgumentException("차감 수량은 1 이상이어야 합니다.");
+        }
         if(this.quantity < amount) {
-            throw new IllegalArgumentException("재고가 부족합니다.");
+            throw new OutOfStockException("재고가 부족합니다.");
         }
         this.quantity -= amount;
     }
