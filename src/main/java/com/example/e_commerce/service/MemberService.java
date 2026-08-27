@@ -25,4 +25,10 @@ public class MemberService {
         Member member = new Member(request.getEmail(), encodedPassword, request.getName());
         memberRepository.save(member);
     }
+
+    @Transactional(readOnly = true)
+    public Member getMember(Long memberId) {
+        return memberRepository.findById(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("멤버를 찾을 수 없습니다."));
+    }
 }

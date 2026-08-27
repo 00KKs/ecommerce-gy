@@ -13,18 +13,17 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class OrderService {
 
-    private final MemberRepository memberRepository;
+    private final MemberService memberService;
+    private final SkuService skuService;
+    private final StockService stockService;
+
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
-    private final SkuRepository skuRepository;
-    private final StockRepository stockRepository;
-    private final FakePaymentGateway paymentGateway;
-
 
     @Transactional
     public OrderCreateResponse createOrder(Long memberId, OrderCreateRequest request) {
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("멤버를 찾을 수 없습니다."));
+        Member member = memberService.getMember(memberId);
+
 
         Address defaultAddress = member.getAddresses().stream()
                 .filter(Address::isDefault)
@@ -40,13 +39,9 @@ public class OrderService {
         );
         orderRepository.save(order);
 
-        Sku sku = skuRepository.findById(request.getSkuId())
-                .orElseThrow(() -> new IllegalArgumentException("SKU를 찾을 수 없습니다."));
+        Sku sku = skuService.getSku(request.getSkuId());
 
-        Stock stock = stockRepository.findBySkuIdForUpdate(sku.getId())
-                .orElseThrow(() -> new IllegalArgumentException("재고 정보를 찾을 수 없습니다."));
-
-        stock.decrease(request.getQuantity());
+        stockService.decrease(sku.getId(), request.getQuantity());
 
         OrderItem orderItem = new OrderItem(
                 order,
@@ -58,8 +53,6 @@ public class OrderService {
         );
         order.addItem(orderItem);
 
-        FakePaymentGateway.PaymentResult result =
-                paymentGateway.requestPayment(order.getId(), order.getTotalAmount());
 
         Payment payment = new Payment(order, order.getTotalAmount(), PaymentStatus.APPROVED, result.paymentKey());
         paymentRepository.save(payment);
