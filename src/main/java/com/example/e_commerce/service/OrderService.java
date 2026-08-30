@@ -1,5 +1,7 @@
 package com.example.e_commerce.service;
 
+import com.example.e_commerce.client.pg.PgPaymentClient;
+import com.example.e_commerce.client.pg.dto.response.PgPaymentResponse;
 import com.example.e_commerce.dto.request.Order.OrderCreateRequest;
 import com.example.e_commerce.dto.response.Order.OrderDetailResponse;
 import com.example.e_commerce.dto.response.OrderCreateResponse;
@@ -8,23 +10,36 @@ import com.example.e_commerce.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
 public class OrderService {
 
-    private final MemberRepository memberRepository;
+    private final MemberService memberService;
+    private final SkuService skuService;
+    private final StockService stockService;
+    private final PgPaymentClient pgPaymentClient;
+
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
-    private final SkuRepository skuRepository;
-    private final StockRepository stockRepository;
-    private final FakePaymentGateway paymentGateway;
+    private final TransactionTemplate transactionTemplate;
 
-
-    @Transactional
     public OrderCreateResponse createOrder(Long memberId, OrderCreateRequest request) {
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("멤버를 찾을 수 없습니다."));
+        OrderPreparation preparation =
+                transactionTemplate.execute(status -> prepareOrder(memberId, request));
+
+        PgPaymentResponse created =
+                pgPaymentClient.create(preparation.orderId(), preparation.amount());
+        PgPaymentResponse confirmed =
+                pgPaymentClient.confirm(created.paymentKey(), preparation.orderId(), preparation.amount());
+
+        return transactionTemplate.execute(status -> completeOrder(preparation.orderId(), confirmed));
+    }
+
+    public OrderPreparation prepareOrder(Long memberId, OrderCreateRequest request) {
+        Member member = memberService.getMember(memberId);
+
 
         Address defaultAddress = member.getAddresses().stream()
                 .filter(Address::isDefault)
@@ -40,13 +55,8 @@ public class OrderService {
         );
         orderRepository.save(order);
 
-        Sku sku = skuRepository.findById(request.getSkuId())
-                .orElseThrow(() -> new IllegalArgumentException("SKU를 찾을 수 없습니다."));
-
-        Stock stock = stockRepository.findBySkuIdForUpdate(sku.getId())
-                .orElseThrow(() -> new IllegalArgumentException("재고 정보를 찾을 수 없습니다."));
-
-        stock.decrease(request.getQuantity());
+        Sku sku = skuService.getSku(request.getSkuId());
+        stockService.decrease(sku.getId(), request.getQuantity());
 
         OrderItem orderItem = new OrderItem(
                 order,
@@ -58,16 +68,22 @@ public class OrderService {
         );
         order.addItem(orderItem);
 
-        FakePaymentGateway.PaymentResult result =
-                paymentGateway.requestPayment(order.getId(), order.getTotalAmount());
+        return new OrderPreparation(order.getId(), order.getTotalAmount());
+    }
 
-        Payment payment = new Payment(order, order.getTotalAmount(), PaymentStatus.APPROVED, result.paymentKey());
+    private OrderCreateResponse completeOrder(Long orderId, PgPaymentResponse confirmed) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
+
+        Payment payment = new Payment(order, order.getTotalAmount(), PaymentStatus.DONE, confirmed.paymentKey());
         paymentRepository.save(payment);
 
         order.confirm();
 
-        return new OrderCreateResponse(order, result.paymentKey());
+        return new OrderCreateResponse(order, confirmed.paymentKey());
     }
+
+    private record OrderPreparation(Long orderId, int amount) {}
 
     @Transactional(readOnly = true)
     public OrderDetailResponse getOrder(Long memberId, Long orderId) {

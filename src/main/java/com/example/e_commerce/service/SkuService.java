@@ -78,4 +78,10 @@ public class SkuService {
         sku.changePrice(request.getPrice());
         return new SkuPriceResponse(sku);
     }
+
+    @Transactional(readOnly = true)
+    public Sku getSku(Long skuId) {
+        return skuRepository.findById(skuId)
+                .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다."));
+    }
 }
