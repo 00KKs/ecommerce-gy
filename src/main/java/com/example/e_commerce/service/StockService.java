@@ -34,4 +34,12 @@ public class StockService {
                 .orElseThrow(() -> new IllegalArgumentException("재고 정보를 찾을 수 없습니다."));
         stock.decrease(quantity);
     }
+
+    public void restore(Long skuId, int quantity) {
+        Stock stock = stockRepository.findBySkuIdForUpdate(skuId)
+                .orElseThrow(() -> new IllegalArgumentException("재고 정보를 찾을 수 없습니다."));
+        stock.restore(quantity);
+    }
+
+
 }
