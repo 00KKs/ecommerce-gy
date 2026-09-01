@@ -20,10 +20,10 @@ public class OrderService {
     private final MemberService memberService;
     private final SkuService skuService;
     private final StockService stockService;
+    private final PaymentService paymentService;
     private final PgPaymentClient pgPaymentClient;
 
     private final OrderRepository orderRepository;
-    private final PaymentRepository paymentRepository;
     private final TransactionTemplate transactionTemplate;
 
     public OrderCreateResponse createOrder(Long memberId, OrderCreateRequest request) {
@@ -82,8 +82,7 @@ public class OrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
 
-        Payment payment = new Payment(order, order.getTotalAmount(), PaymentStatus.DONE, confirmed.paymentKey());
-        paymentRepository.save(payment);
+        paymentService.confirmSuccess(order, order.getTotalAmount(), confirmed.paymentKey());
 
         order.confirm();
 
@@ -96,8 +95,7 @@ public class OrderService {
 
         stockService.restore(preparation.skuId(), preparation.quantity());
 
-        Payment payment = new Payment(order, preparation.amount(), PaymentStatus.ABORTED, paymentKey);
-        paymentRepository.save(payment);
+        paymentService.confirmFailure(order, preparation.amount(), paymentKey);
     }
 
     private record OrderPreparation(Long orderId, int amount, Long skuId, int quantity) {}
@@ -111,8 +109,7 @@ public class OrderService {
             throw new IllegalArgumentException("본인의 주문만 조회할 수 있습니다.");
         }
 
-        Payment payment = paymentRepository.findByOrderId(orderId)
-                .orElseThrow(() -> new IllegalStateException("결제 정보를 찾을 수 없습니다."));
+        Payment payment = paymentService.getPayment(orderId);
 
         return new OrderDetailResponse(order, payment.getPaymentKey());
     }
