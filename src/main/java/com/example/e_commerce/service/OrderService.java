@@ -1,6 +1,7 @@
 package com.example.e_commerce.service;
 
 import com.example.e_commerce.client.pg.PgPaymentClient;
+import com.example.e_commerce.client.pg.PgPaymentException;
 import com.example.e_commerce.client.pg.dto.response.PgPaymentResponse;
 import com.example.e_commerce.dto.request.Order.OrderCreateRequest;
 import com.example.e_commerce.dto.response.Order.OrderDetailResponse;
@@ -29,10 +30,16 @@ public class OrderService {
         OrderPreparation preparation =
                 transactionTemplate.execute(status -> prepareOrder(memberId, request));
 
-        PgPaymentResponse created =
-                pgPaymentClient.create(preparation.orderId(), preparation.amount());
-        PgPaymentResponse confirmed =
-                pgPaymentClient.confirm(created.paymentKey(), preparation.orderId(), preparation.amount());
+        PgPaymentResponse created = null;
+        PgPaymentResponse confirmed;
+        try {
+            created = pgPaymentClient.create(preparation.orderId(), preparation.amount());
+            confirmed = pgPaymentClient.confirm(created.paymentKey(), preparation.orderId(), preparation.amount());
+        } catch (PgPaymentException e) {
+            String paymentKey = created != null ? created.paymentKey() : null;
+            transactionTemplate.executeWithoutResult(status -> failOrder(preparation, paymentKey));
+            throw e;
+        }
 
         return transactionTemplate.execute(status -> completeOrder(preparation.orderId(), confirmed));
     }
@@ -68,7 +75,7 @@ public class OrderService {
         );
         order.addItem(orderItem);
 
-        return new OrderPreparation(order.getId(), order.getTotalAmount());
+        return new OrderPreparation(order.getId(), order.getTotalAmount(), sku.getId(), request.getQuantity());
     }
 
     private OrderCreateResponse completeOrder(Long orderId, PgPaymentResponse confirmed) {
@@ -83,7 +90,17 @@ public class OrderService {
         return new OrderCreateResponse(order, confirmed.paymentKey());
     }
 
-    private record OrderPreparation(Long orderId, int amount) {}
+    private void failOrder(OrderPreparation preparation, String paymentKey) {
+        Order order = orderRepository.findById(preparation.orderId())
+                .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
+
+        stockService.restore(preparation.skuId(), preparation.quantity());
+
+        Payment payment = new Payment(order, preparation.amount(), PaymentStatus.ABORTED, paymentKey);
+        paymentRepository.save(payment);
+    }
+
+    private record OrderPreparation(Long orderId, int amount, Long skuId, int quantity) {}
 
     @Transactional(readOnly = true)
     public OrderDetailResponse getOrder(Long memberId, Long orderId) {
