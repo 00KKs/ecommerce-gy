@@ -4,6 +4,7 @@ import com.example.e_commerce.client.pg.PgPaymentClient;
 import com.example.e_commerce.client.pg.PgPaymentException;
 import com.example.e_commerce.client.pg.dto.response.PgPaymentResponse;
 import com.example.e_commerce.dto.request.Order.OrderCreateRequest;
+import com.example.e_commerce.dto.response.Address.DefaultAddressInfo;
 import com.example.e_commerce.dto.response.Order.OrderDetailResponse;
 import com.example.e_commerce.dto.response.OrderCreateResponse;
 import com.example.e_commerce.entity.*;
@@ -17,7 +18,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @RequiredArgsConstructor
 public class OrderService {
 
-    private final MemberService memberService;
+    private final AddressService addressService;
     private final SkuService skuService;
     private final StockService stockService;
     private final PaymentService paymentService;
@@ -45,20 +46,14 @@ public class OrderService {
     }
 
     public OrderPreparation prepareOrder(Long memberId, OrderCreateRequest request) {
-        Member member = memberService.getMember(memberId);
-
-
-        Address defaultAddress = member.getAddresses().stream()
-                .filter(Address::isDefault)
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("기본 배송지가 없습니다."));
+        DefaultAddressInfo defaultAddress = addressService.getDefaultAddress(memberId);
 
         Order order = new Order(
-                member,
-                defaultAddress.getRecipientName(),
-                defaultAddress.getRecipientPhone(),
-                defaultAddress.getAddress(),
-                defaultAddress.getDeliveryRequest()
+                memberId,
+                defaultAddress.recipientName(),
+                defaultAddress.recipientPhone(),
+                defaultAddress.address(),
+                defaultAddress.deliveryRequest()
         );
         orderRepository.save(order);
 
@@ -105,7 +100,7 @@ public class OrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
 
-        if (!order.getMember().getId().equals(memberId)) {
+        if (!order.getMemberId().equals(memberId)) {
             throw new IllegalArgumentException("본인의 주문만 조회할 수 있습니다.");
         }
 
