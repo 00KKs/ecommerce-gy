@@ -28,8 +28,6 @@ public class ProductService {
     public void createProduct(ProductCreateRequest request) {
         Category category = categoryService.getLeafCategory(request.getCategoryId());
 
-
-
         Product product = new Product(request.getName(), request.getDescription(), category);
         productRepository.save(product);
     }
@@ -82,5 +80,11 @@ public class ProductService {
 
         product.changeStatus(ProductStatus.valueOf(request.getStatus()));
         return new ProductStatusResponse(product);
+    }
+
+    @Transactional(readOnly = true)
+    public Product getProduct(Long productId) {
+        return productRepository.findById(productId)
+                .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다."));
     }
 }
