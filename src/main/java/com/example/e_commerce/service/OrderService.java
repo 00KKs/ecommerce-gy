@@ -7,6 +7,7 @@ import com.example.e_commerce.dto.request.Order.OrderCreateRequest;
 import com.example.e_commerce.dto.response.Address.DefaultAddressInfo;
 import com.example.e_commerce.dto.response.Order.OrderDetailResponse;
 import com.example.e_commerce.dto.response.OrderCreateResponse;
+import com.example.e_commerce.dto.response.Sku.SkuOrderInfo;
 import com.example.e_commerce.entity.*;
 import com.example.e_commerce.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -57,20 +58,20 @@ public class OrderService {
         );
         orderRepository.save(order);
 
-        Sku sku = skuService.getSku(request.getSkuId());
-        stockService.decrease(sku.getId(), request.getQuantity());
+        SkuOrderInfo skuInfo = skuService.getSkuOrderInfo(request.getSkuId());
+        stockService.decrease(skuInfo.skuId(), request.getQuantity());
 
         OrderItem orderItem = new OrderItem(
                 order,
-                sku.getId(),
-                sku.getProduct().getName(),
-                sku.getOptionName(),
-                sku.getPrice(),
+                skuInfo.skuId(),
+                skuInfo.productName(),
+                skuInfo.optionName(),
+                skuInfo.price(),
                 request.getQuantity()
         );
         order.addItem(orderItem);
 
-        return new OrderPreparation(order.getId(), order.getTotalAmount(), sku.getId(), request.getQuantity());
+        return new OrderPreparation(order.getId(), order.getTotalAmount(), skuInfo.skuId(), request.getQuantity());
     }
 
     private OrderCreateResponse completeOrder(Long orderId, PgPaymentResponse confirmed) {

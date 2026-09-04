@@ -3,10 +3,7 @@ package com.example.e_commerce.service;
 import com.example.e_commerce.dto.request.Sku.SkuCreateRequest;
 import com.example.e_commerce.dto.request.Sku.SkuPriceRequest;
 import com.example.e_commerce.dto.request.Sku.SkuStatusRequest;
-import com.example.e_commerce.dto.response.Sku.SkuCreateResponse;
-import com.example.e_commerce.dto.response.Sku.SkuPriceResponse;
-import com.example.e_commerce.dto.response.Sku.SkuResponse;
-import com.example.e_commerce.dto.response.Sku.SkuStatusResponse;
+import com.example.e_commerce.dto.response.Sku.*;
 import com.example.e_commerce.entity.*;
 import com.example.e_commerce.repository.ProductRepository;
 import com.example.e_commerce.repository.SkuRepository;
@@ -83,5 +80,12 @@ public class SkuService {
     public Sku getSku(Long skuId) {
         return skuRepository.findById(skuId)
                 .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다."));
+    }
+
+    @Transactional(readOnly = true)
+    public SkuOrderInfo getSkuOrderInfo(Long skuId) {
+        Sku sku = skuRepository.findByIdWithProduct(skuId)
+                .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다."));
+        return new SkuOrderInfo(sku);
     }
 }
