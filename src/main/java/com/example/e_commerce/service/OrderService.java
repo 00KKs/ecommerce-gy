@@ -105,8 +105,8 @@ public class OrderService {
             throw new IllegalArgumentException("본인의 주문만 조회할 수 있습니다.");
         }
 
-        Payment payment = paymentService.getPayment(orderId);
+        String paymentKey = paymentService.getPaymentKey(orderId);
 
-        return new OrderDetailResponse(order, payment.getPaymentKey());
+        return new OrderDetailResponse(order, paymentKey);
     }
 }

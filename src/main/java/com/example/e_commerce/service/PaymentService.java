@@ -24,8 +24,9 @@ public class PaymentService {
         return paymentRepository.save(payment);
     }
 
-    public Payment getPayment(Long orderId) {
+    public String getPaymentKey(Long orderId) {
         return paymentRepository.findByOrderId(orderId)
-                .orElseThrow(() -> new IllegalStateException("결제 정보를 찾을 수 없습니다."));
+                .orElseThrow(() -> new IllegalStateException("결제 정보를 찾을 수 없습니다."))
+                .getPaymentKey();
     }
 }
