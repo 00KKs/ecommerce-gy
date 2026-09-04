@@ -25,11 +25,10 @@ public class SecurityConfig {
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**",
                                 "/swagger-resources/**",
-                                "/api/products/**",
-                                "/api/skus/**")
+                                "/api/products/**")
                 .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/categories").permitAll()
-                        .requestMatchers("/api/admin/**").permitAll()
+                                .requestMatchers("/api/admin/**", "/api/skus/**").hasAuthority("ADMIN")
                         .anyRequest().authenticated()
                 );
         return http.build();
