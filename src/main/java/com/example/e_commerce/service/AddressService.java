@@ -3,6 +3,7 @@ package com.example.e_commerce.service;
 import com.example.e_commerce.dto.request.Address.AddressCreateRequest;
 import com.example.e_commerce.dto.request.Address.AddressUpdateRequest;
 import com.example.e_commerce.dto.response.Address.AddressResponse;
+import com.example.e_commerce.dto.response.Address.DefaultAddressInfo;
 import com.example.e_commerce.entity.Address;
 import com.example.e_commerce.entity.Member;
 import com.example.e_commerce.repository.AddressRepository;
@@ -20,12 +21,12 @@ public class AddressService {
     private static final int MAX_ADDRESS_CNT = 10;
 
     private final AddressRepository addressRepository;
-    private final MemberRepository memberRepository;
+    private final MemberService memberService;
 
     // 배송지 추가하기
     @Transactional
     public void addAddress(Long memberId, AddressCreateRequest request) {
-        Member member = getMember(memberId);
+        Member member = memberService.getMember(memberId);
 
         if (member.getAddresses().size() >= MAX_ADDRESS_CNT) {
             throw new IllegalStateException("배송지는 최대 " + MAX_ADDRESS_CNT + "개까지 등록 가능합니다.");
@@ -46,7 +47,7 @@ public class AddressService {
     // 배송지 전체 조회
     @Transactional(readOnly = true)
     public List<AddressResponse> getAddresses(Long memberId) {
-        Member member = getMember(memberId);
+        Member member = memberService.getMember(memberId);
         return member.getAddresses().stream()
                 .map(AddressResponse::new)
                 .toList();
@@ -65,7 +66,7 @@ public class AddressService {
     // 배송지 삭제
     @Transactional
     public void deleteAddress(Long memberId, Long addressId) {
-        Member member = getMember(memberId);
+        Member member = memberService.getMember(memberId);
         Address address = getOwnedAddress(addressId, memberId);
 
         if (member.getAddresses().size() == 1) {
@@ -80,16 +81,19 @@ public class AddressService {
     // 기본 배송지 지정
     @Transactional
     public void setDefault(Long memberId, Long addressId) {
-        Member member = getMember(memberId);
+        Member member = memberService.getMember(memberId);
         Address address = getOwnedAddress(addressId, memberId);
 
         member.getAddresses().forEach(a -> a.setDefault(false));
         address.setDefault(true);
     }
 
-    private Member getMember(Long memberId) {
-        return memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("회원이 없습니다."));
+    // 기본 배송지 정보 조회 (주문 등 다른 도메인에서 사용)
+    @Transactional(readOnly = true)
+    public DefaultAddressInfo getDefaultAddress(Long memberId) {
+        Address address = addressRepository.findByMemberIdAndIsDefaultTrue(memberId)
+                .orElseThrow(() -> new IllegalStateException("기본 배송지가 없습니다."));
+        return new DefaultAddressInfo(address);
     }
 
     // 그 회원의 배송지 주소가 맞는지 검증

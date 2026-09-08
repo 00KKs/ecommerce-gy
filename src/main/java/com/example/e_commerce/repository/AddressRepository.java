@@ -7,4 +7,5 @@ import java.util.Optional;
 
 public interface AddressRepository extends JpaRepository<Address, Long> {
     Optional<Address> findByIdAndMemberId(Long addressId, Long memberId);
+    Optional<Address> findByMemberIdAndIsDefaultTrue(Long memberId);
 }

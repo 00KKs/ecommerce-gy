@@ -22,16 +22,11 @@ import java.util.OptionalInt;
 public class ProductService {
 
     private final ProductRepository productRepository;
-    private final CategoryRepository categoryRepository;
+    private final CategoryService categoryService;
 
     @Transactional
     public void createProduct(ProductCreateRequest request) {
-        Category category = categoryRepository.findById(request.getCategoryId())
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 카테고리입니다."));
-
-        if(!category.getChildren().isEmpty()) {
-            throw new IllegalArgumentException("상품은 최하위 카테고리만 선택가능합니다.");
-        }
+        Category category = categoryService.getLeafCategory(request.getCategoryId());
 
         Product product = new Product(request.getName(), request.getDescription(), category);
         productRepository.save(product);
@@ -85,5 +80,11 @@ public class ProductService {
 
         product.changeStatus(ProductStatus.valueOf(request.getStatus()));
         return new ProductStatusResponse(product);
+    }
+
+    @Transactional(readOnly = true)
+    public Product getProduct(Long productId) {
+        return productRepository.findById(productId)
+                .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다."));
     }
 }

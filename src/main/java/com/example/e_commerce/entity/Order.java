@@ -21,9 +21,8 @@ public class Order {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "member_id")
-    private Member member;
+    @Column(nullable = false, name = "member_id")
+    private Long memberId;
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL)
     private List<OrderItem> items = new ArrayList<>();
@@ -46,9 +45,9 @@ public class Order {
 
     private String deliveryRequest;
 
-    public Order(Member member, String recipientName, String recipientPhone,
+    public Order(Long memberId, String recipientName, String recipientPhone,
                  String address, String deliveryRequest) {
-        this.member = member;
+        this.memberId = memberId;
         this.recipientName = recipientName;
         this.recipientPhone = recipientPhone;
         this.address = address;

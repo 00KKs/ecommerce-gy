@@ -30,4 +30,15 @@ public class CategoryService {
                 .map(c -> new CategoryResponse(c, childrenByParentId))
                 .toList();
     }
+    @Transactional(readOnly = true)
+    public Category getLeafCategory(Long categoryId) {
+        Category category = categoryRepository.findById(categoryId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 카테고리입니다."));
+
+        if(!category.getChildren().isEmpty()) {
+            throw new IllegalArgumentException("상품은 최하위 카테고리만 선택가능합니다.");
+        }
+
+        return category;
+    }
 }

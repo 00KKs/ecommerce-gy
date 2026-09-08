@@ -1,10 +1,13 @@
 package com.example.e_commerce.service;
 
 import com.example.e_commerce.client.pg.PgPaymentClient;
+import com.example.e_commerce.client.pg.PgPaymentException;
 import com.example.e_commerce.client.pg.dto.response.PgPaymentResponse;
 import com.example.e_commerce.dto.request.Order.OrderCreateRequest;
+import com.example.e_commerce.dto.response.Address.DefaultAddressInfo;
 import com.example.e_commerce.dto.response.Order.OrderDetailResponse;
 import com.example.e_commerce.dto.response.OrderCreateResponse;
+import com.example.e_commerce.dto.response.Sku.SkuOrderInfo;
 import com.example.e_commerce.entity.*;
 import com.example.e_commerce.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -16,87 +19,94 @@ import org.springframework.transaction.support.TransactionTemplate;
 @RequiredArgsConstructor
 public class OrderService {
 
-    private final MemberService memberService;
+    private final AddressService addressService;
     private final SkuService skuService;
     private final StockService stockService;
+    private final PaymentService paymentService;
     private final PgPaymentClient pgPaymentClient;
 
     private final OrderRepository orderRepository;
-    private final PaymentRepository paymentRepository;
     private final TransactionTemplate transactionTemplate;
 
     public OrderCreateResponse createOrder(Long memberId, OrderCreateRequest request) {
         OrderPreparation preparation =
                 transactionTemplate.execute(status -> prepareOrder(memberId, request));
 
-        PgPaymentResponse created =
-                pgPaymentClient.create(preparation.orderId(), preparation.amount());
-        PgPaymentResponse confirmed =
-                pgPaymentClient.confirm(created.paymentKey(), preparation.orderId(), preparation.amount());
+        PgPaymentResponse created = null;
+        PgPaymentResponse confirmed;
+        try {
+            created = pgPaymentClient.create(preparation.orderId(), preparation.amount());
+            confirmed = pgPaymentClient.confirm(created.paymentKey(), preparation.orderId(), preparation.amount());
+        } catch (PgPaymentException e) {
+            String paymentKey = created != null ? created.paymentKey() : null;
+            transactionTemplate.executeWithoutResult(status -> failOrder(preparation, paymentKey));
+            throw e;
+        }
 
         return transactionTemplate.execute(status -> completeOrder(preparation.orderId(), confirmed));
     }
 
     public OrderPreparation prepareOrder(Long memberId, OrderCreateRequest request) {
-        Member member = memberService.getMember(memberId);
-
-
-        Address defaultAddress = member.getAddresses().stream()
-                .filter(Address::isDefault)
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("기본 배송지가 없습니다."));
+        DefaultAddressInfo defaultAddress = addressService.getDefaultAddress(memberId);
 
         Order order = new Order(
-                member,
-                defaultAddress.getRecipientName(),
-                defaultAddress.getRecipientPhone(),
-                defaultAddress.getAddress(),
-                defaultAddress.getDeliveryRequest()
+                memberId,
+                defaultAddress.recipientName(),
+                defaultAddress.recipientPhone(),
+                defaultAddress.address(),
+                defaultAddress.deliveryRequest()
         );
         orderRepository.save(order);
 
-        Sku sku = skuService.getSku(request.getSkuId());
-        stockService.decrease(sku.getId(), request.getQuantity());
+        SkuOrderInfo skuInfo = skuService.getSkuOrderInfo(request.getSkuId());
+        stockService.decrease(skuInfo.skuId(), request.getQuantity());
 
         OrderItem orderItem = new OrderItem(
                 order,
-                sku.getId(),
-                sku.getProduct().getName(),
-                sku.getOptionName(),
-                sku.getPrice(),
+                skuInfo.skuId(),
+                skuInfo.productName(),
+                skuInfo.optionName(),
+                skuInfo.price(),
                 request.getQuantity()
         );
         order.addItem(orderItem);
 
-        return new OrderPreparation(order.getId(), order.getTotalAmount());
+        return new OrderPreparation(order.getId(), order.getTotalAmount(), skuInfo.skuId(), request.getQuantity());
     }
 
     private OrderCreateResponse completeOrder(Long orderId, PgPaymentResponse confirmed) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
 
-        Payment payment = new Payment(order, order.getTotalAmount(), PaymentStatus.DONE, confirmed.paymentKey());
-        paymentRepository.save(payment);
+        paymentService.confirmSuccess(order, order.getTotalAmount(), confirmed.paymentKey());
 
         order.confirm();
 
         return new OrderCreateResponse(order, confirmed.paymentKey());
     }
 
-    private record OrderPreparation(Long orderId, int amount) {}
+    private void failOrder(OrderPreparation preparation, String paymentKey) {
+        Order order = orderRepository.findById(preparation.orderId())
+                .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
+
+        stockService.restore(preparation.skuId(), preparation.quantity());
+
+        paymentService.confirmFailure(order, preparation.amount(), paymentKey);
+    }
+
+    private record OrderPreparation(Long orderId, int amount, Long skuId, int quantity) {}
 
     @Transactional(readOnly = true)
     public OrderDetailResponse getOrder(Long memberId, Long orderId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
 
-        if (!order.getMember().getId().equals(memberId)) {
+        if (!order.getMemberId().equals(memberId)) {
             throw new IllegalArgumentException("본인의 주문만 조회할 수 있습니다.");
         }
 
-        Payment payment = paymentRepository.findByOrderId(orderId)
-                .orElseThrow(() -> new IllegalStateException("결제 정보를 찾을 수 없습니다."));
+        String paymentKey = paymentService.getPaymentKey(orderId);
 
-        return new OrderDetailResponse(order, payment.getPaymentKey());
+        return new OrderDetailResponse(order, paymentKey);
     }
 }
