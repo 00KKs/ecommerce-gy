@@ -5,9 +5,13 @@ import com.example.e_commerce.client.pg.dto.request.PgCreatePaymentRequest;
 import com.example.e_commerce.client.pg.dto.response.PgErrorResponse;
 import com.example.e_commerce.client.pg.dto.response.PgPaymentResponse;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
+
+import java.net.http.HttpClient;
+import java.time.Duration;
 
 @Component
 public class PgPaymentClient {
@@ -17,7 +21,17 @@ public class PgPaymentClient {
     private final RestClient restClient;
 
     public PgPaymentClient(@Value("${pg.base-url}") String baseUrl) {
-        this.restClient = RestClient.create(baseUrl);
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(1))
+                .build();
+
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
+        factory.setReadTimeout(Duration.ofSeconds(3));
+
+        this.restClient = RestClient.builder()
+                .baseUrl(baseUrl)
+                .requestFactory(factory)
+                .build();
     }
 
     public PgPaymentResponse create(Long orderId, int amount) {
