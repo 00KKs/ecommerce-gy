@@ -1,6 +1,6 @@
 package com.example.e_commerce.client.pg;
 
-public class PgPaymentException extends RuntimeException {
+public class PgPaymentException extends PgException {
 
     private final String code;
 
