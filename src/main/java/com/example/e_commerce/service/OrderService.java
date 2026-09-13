@@ -32,14 +32,19 @@ public class OrderService {
         OrderPreparation preparation =
                 transactionTemplate.execute(status -> prepareOrder(memberId, request));
 
-        PgPaymentResponse created = null;
         PgPaymentResponse confirmed;
         try {
-            created = pgPaymentClient.create(preparation.orderId(), preparation.amount());
-            confirmed = pgPaymentClient.confirm(created.paymentKey(), preparation.orderId(), preparation.amount());
+            PgPaymentResponse created =
+                    pgPaymentClient.create(preparation.orderId(), preparation.amount());
+
+            transactionTemplate.executeWithoutResult(status ->
+                    paymentService.ready(preparation.orderId(), preparation.amount(), created.paymentKey()));
+
+            confirmed = pgPaymentClient.confirm(
+                    created.paymentKey(), preparation.orderId(), preparation.amount());
+
         } catch (PgPaymentException e) {
-            String paymentKey = created != null ? created.paymentKey() : null;
-            transactionTemplate.executeWithoutResult(status -> failOrder(preparation, paymentKey));
+            transactionTemplate.executeWithoutResult(status -> failOrder(preparation));
             throw e;
         }
 
@@ -78,20 +83,20 @@ public class OrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
 
-        paymentService.confirmSuccess(order, order.getTotalAmount(), confirmed.paymentKey());
+        paymentService.markDone(orderId);
 
         order.confirm();
 
         return new OrderCreateResponse(order, confirmed.paymentKey());
     }
 
-    private void failOrder(OrderPreparation preparation, String paymentKey) {
-        Order order = orderRepository.findById(preparation.orderId())
+    private void failOrder(OrderPreparation preparation) {
+        orderRepository.findById(preparation.orderId())
                 .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
 
         stockService.restore(preparation.skuId(), preparation.quantity());
 
-        paymentService.confirmFailure(order, preparation.amount(), paymentKey);
+        paymentService.markAbortedIfExists(preparation.orderId());
     }
 
     private record OrderPreparation(Long orderId, int amount, Long skuId, int quantity) {}

@@ -26,7 +26,7 @@ public class Payment {
 
     private String paymentKey;
 
-    public Payment(Order order, int amount, PaymentStatus status, String paymentKey) {
+    private Payment(Order order, int amount, PaymentStatus status, String paymentKey) {
         this.order = order;
         this.amount = amount;
         this.status = status;
