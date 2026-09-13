@@ -64,6 +64,13 @@ public class PgPaymentClient {
                 .body(PgPaymentResponse.class));
     }
 
+    public PgPaymentResponse retrieve(String paymentKey) {
+        return execute(paymentKey, "retrieve", null, () -> restClient.get()
+                .uri("/v1/payments/{paymentKey}", paymentKey)
+                .retrieve()
+                .body(PgPaymentResponse.class));
+    }
+
     private <T> T execute(String paymentKey, String operation, Long orderId, Supplier<T> call) {
         long startedAt = System.nanoTime();
         try {
