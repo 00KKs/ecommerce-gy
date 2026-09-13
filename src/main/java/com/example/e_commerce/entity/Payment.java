@@ -32,4 +32,16 @@ public class Payment {
         this.status = status;
         this.paymentKey = paymentKey;
     }
+
+    public static Payment ready(Order order, int amount, String paymentKey) {
+        return new Payment(order, amount, PaymentStatus.READY, paymentKey);
+    }
+
+    public void markDone() {
+        this.status = PaymentStatus.DONE;
+    }
+
+    public void markAborted() {
+        this.status = PaymentStatus.ABORTED;
+    }
 }
