@@ -107,13 +107,20 @@ public class OrderService {
         return new OrderCreateResponse(order, confirmed.paymentKey());
     }
 
+    /**
+     * 주문 실패 확정. 승인되지 않은 것이 확실할 때만 쓴다.
+     * 재고를 되돌리고 결제를 ABORTED 로 닫는다.
+     */
     private void failOrder(OrderPreparation preparation) {
-        orderRepository.findById(preparation.orderId())
-                .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
-
-        stockService.restore(preparation.skuId(), preparation.quantity());
-
+        restoreStock(preparation);
         paymentService.markAbortedIfExists(preparation.orderId());
+    }
+
+    /**
+     * 재고만 되돌리고 결제 상태는 건드리지 않는다. 청구 여부가 불확실할 때 쓴다.
+     */
+    private void restoreStock(OrderPreparation preparation) {
+        stockService.restore(preparation.skuId(), preparation.quantity());
     }
 
     private record OrderPreparation(Long orderId, int amount, Long skuId, int quantity) {}
@@ -140,6 +147,22 @@ public class OrderService {
                         paymentKey, attempt, RECOVERY_MAX_ATTEMPTS);
                 sleep();
                 continue;
+
+            } catch (PgPaymentException retrieveRejected) {
+                // PG 가 조회에 에러로 응답했다(예: NOT_FOUND_PAYMENT).
+                // 재시도해도 같은 답이 오므로 루프를 끝내되, 청구 여부는 확신할 수 없다.
+                log.error("복구 조회 오류: paymentKey={}, code={}",
+                        paymentKey, retrieveRejected.getCode(), retrieveRejected);
+                transactionTemplate.executeWithoutResult(status -> restoreStock(preparation));
+                throw retrieveRejected;
+            }
+
+            if (isMismatched(actual, preparation)) {
+                // 같은 키로 다시 물어도 같은 답이 오므로 재시도는 의미가 없다.
+                log.error("복구 조회 불일치: paymentKey={}, 기대=(orderId={}, amount={}), 실제=(orderId={}, amount={})",
+                        paymentKey, preparation.orderId(), preparation.amount(),
+                        actual.orderId(), actual.amount());
+                throw cause;
             }
 
             switch (actual.status()) {
@@ -161,10 +184,16 @@ public class OrderService {
             }
         }
 
-        // 끝까지 확정하지 못했다. Payment 는 READY 로 남고 재고도 복구하지 않는다.
         log.error("복구 실패: 결과 미확정으로 종료. orderId={}, paymentKey={}",
                 preparation.orderId(), paymentKey);
         throw cause;
+    }
+
+
+    // 조회 결과가 정말 이 주문의 결제인지 확인한다.
+    private boolean isMismatched(PgPaymentResponse actual, OrderPreparation preparation) {
+        return !String.valueOf(preparation.orderId()).equals(actual.orderId())
+                || actual.amount() != preparation.amount();
     }
 
     private void sleep() {
