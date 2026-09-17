@@ -28,6 +28,7 @@ public class Sku {
     private SkuStatus status;
 
     public Sku(Product product, String optionName, int price) {
+        validatePrice(price);
         this.product = product;
         this.optionName = optionName;
         this.price = price;
@@ -39,6 +40,14 @@ public class Sku {
     }
 
     public void changePrice(int price) {
+        validatePrice(price);
         this.price = price;
+    }
+
+
+    private static void validatePrice(int price) {
+        if (price <= 0) {
+            throw new IllegalArgumentException("가격은 0보다 커야 합니다.");
+        }
     }
 }
