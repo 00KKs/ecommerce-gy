@@ -74,12 +74,6 @@ public class SkuService {
     }
 
     @Transactional(readOnly = true)
-    public Sku getSku(Long skuId) {
-        return skuRepository.findById(skuId)
-                .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다."));
-    }
-
-    @Transactional(readOnly = true)
     public SkuOrderInfo getSkuOrderInfo(Long skuId) {
         Sku sku = skuRepository.findByIdWithProduct(skuId)
                 .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다."));
