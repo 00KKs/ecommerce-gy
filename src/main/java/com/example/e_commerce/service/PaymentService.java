@@ -18,10 +18,8 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final OrderRepository orderRepository;
 
-    /**
-     * PG 결제 건 생성 직후 READY 로 남긴다.
-     * 승인 결과를 받기 전에 커밋되어야 타임아웃 이후에도 paymentKey 가 살아남는다.
-     */
+
+    // 승인 결과를 받기 전에 커밋되어야 타임아웃 이후에도 paymentKey 가 살아남는다.
     public Payment ready(Long orderId, int amount, String paymentKey) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
@@ -35,17 +33,12 @@ public class PaymentService {
                 .markDone();
     }
 
-    /**
-     * create 단계에서 실패했다면 Payment 레코드 자체가 없다.
-     * 그때는 남길 결제가 없으므로 아무것도 하지 않는다.
-     */
+    // created 단계에서 실패시 paymennt가 남아있지 않다. 아무것도 하지 않는다.
     public void markAbortedIfExists(Long orderId) {
         paymentRepository.findByOrderId(orderId).ifPresent(Payment::markAborted);
     }
 
-    /**
-     * 결제 레코드는 없을 수 있다. create 단계에서 실패한 주문이 그렇다.
-     */
+    // created 단계에서 실패시 payment 없을 수 있다.
     @Transactional(readOnly = true)
     public Optional<Payment> findByOrderId(Long orderId) {
         return paymentRepository.findByOrderId(orderId);

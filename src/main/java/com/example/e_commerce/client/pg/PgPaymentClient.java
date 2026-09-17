@@ -39,10 +39,7 @@ public class PgPaymentClient {
                 .build();
     }
 
-    /**
-     * 결제 건 생성. 아직 승인 전이라 실패해도 대금은 빠져나가지 않는다.
-     * 타임아웃이 나면 paymentKey 를 못 받으므로 복구 조회가 불가능하다.
-     */
+    // 결제 생성. 승인 전이라 대금은 안 빠져나간다.
     public PgPaymentResponse create(Long orderId, int amount) {
         return execute(null, "create", orderId, () -> restClient.post()
                 .uri("/v1/payments")
@@ -51,10 +48,7 @@ public class PgPaymentClient {
                 .body(PgPaymentResponse.class));
     }
 
-    /**
-     * 결제 승인. 응답을 못 받으면 PG 쪽에서 승인이 완료됐을 수 있으므로
-     * {@link PgUnknownResultException} 에 paymentKey 를 담아 복구 조회 경로를 연다.
-     */
+    // 결제 승인. 응답 못 받았는데 PG 승인이 완료됏을 수도 있으므로 paymentKey를 담아 복구 조회 경로를 연다.
     public PgPaymentResponse confirm(String paymentKey, Long orderId, int amount) {
         return execute(paymentKey, "confirm", orderId, () -> restClient.post()
                 .uri("/v1/payments/confirm")

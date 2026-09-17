@@ -6,8 +6,8 @@ import com.example.e_commerce.client.pg.PgUnknownResultException;
 import com.example.e_commerce.client.pg.dto.response.PgPaymentResponse;
 import com.example.e_commerce.dto.request.Order.OrderCreateRequest;
 import com.example.e_commerce.dto.response.Address.DefaultAddressInfo;
+import com.example.e_commerce.dto.response.Order.OrderCreateResponse;
 import com.example.e_commerce.dto.response.Order.OrderDetailResponse;
-import com.example.e_commerce.dto.response.OrderCreateResponse;
 import com.example.e_commerce.dto.response.Sku.SkuOrderInfo;
 import com.example.e_commerce.entity.*;
 import com.example.e_commerce.repository.*;
@@ -43,9 +43,8 @@ public class OrderService {
         return transactionTemplate.execute(status -> completeOrder(preparation.orderId(), confirmed));
     }
 
-    /**
-     * PG 결제 건 생성 → READY 저장 → 승인. 응답을 못 받으면 조회로 결과를 확정한다.
-     */
+
+    // PG 결제 건 생성 → READY 저장 → 승인. 응답을 못 받으면 조회로 결과를 확정한다.
     private PgPaymentResponse confirmPayment(OrderPreparation preparation) {
         try {
             PgPaymentResponse created =
@@ -107,28 +106,20 @@ public class OrderService {
         return new OrderCreateResponse(order, confirmed.paymentKey());
     }
 
-    /**
-     * 주문 실패 확정. 승인되지 않은 것이 확실할 때만 쓴다.
-     * 재고를 되돌리고 결제를 ABORTED 로 닫는다.
-     */
+    // 주문 실패 확정일때. 재고 되돌리고 결제는 ABORTED로 전환한다.
     private void failOrder(OrderPreparation preparation) {
         restoreStock(preparation);
         paymentService.markAbortedIfExists(preparation.orderId());
     }
 
-    /**
-     * 재고만 되돌리고 결제 상태는 건드리지 않는다. 청구 여부가 불확실할 때 쓴다.
-     */
+    // 주문 실패가 불확실할때. 재고만 되돌리고 상태 전환은 하지 않는다.
     private void restoreStock(OrderPreparation preparation) {
         stockService.restore(preparation.skuId(), preparation.quantity());
     }
 
     private record OrderPreparation(Long orderId, int amount, Long skuId, int quantity) {}
 
-    /**
-     * 승인 결과를 받지 못했을 때 PG 에 실제 결과를 물어 확정한다.
-     * 조회는 부작용이 없으므로 실패해도 안전하게 재시도할 수 있다.
-     */
+    // 승인 결과 못 받았을때. PG사에 실제 결과를 물어본 후 확정한다.
     private PgPaymentResponse recover(OrderPreparation preparation, PgUnknownResultException cause) {
         if (!cause.isRecoverable()) {
             // create 단계에서 끊긴 경우. paymentKey 가 없어 물어볼 수단이 없다.
@@ -150,7 +141,7 @@ public class OrderService {
 
             } catch (PgPaymentException retrieveRejected) {
                 // PG 가 조회에 에러로 응답했다(예: NOT_FOUND_PAYMENT).
-                // 재시도해도 같은 답이 오므로 루프를 끝내되, 청구 여부는 확신할 수 없다.
+                // 재시도해도 같은 답이 오므로 루프를 끝내되, 승인 여부는 확신할 수 없다.
                 log.error("복구 조회 오류: paymentKey={}, code={}",
                         paymentKey, retrieveRejected.getCode(), retrieveRejected);
                 transactionTemplate.executeWithoutResult(status -> restoreStock(preparation));
@@ -158,7 +149,7 @@ public class OrderService {
             }
 
             if (isMismatched(actual, preparation)) {
-                // 같은 키로 다시 물어도 같은 답이 오므로 재시도는 의미가 없다.
+                // 같은 키로 다시 물어도 같은 답이 오므로 재시도는 의미가 없다
                 log.error("복구 조회 불일치: paymentKey={}, 기대=(orderId={}, amount={}), 실제=(orderId={}, amount={})",
                         paymentKey, preparation.orderId(), preparation.amount(),
                         actual.orderId(), actual.amount());
