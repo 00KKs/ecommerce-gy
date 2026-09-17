@@ -29,8 +29,10 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception e) {
+        log.error("처리되지 않은 예외", e);
+
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse("SERVER_ERROR", e.getMessage()));
+                .body(new ErrorResponse("SERVER_ERROR", "요청을 처리할 수 없습니다."));
     }
 
     @ExceptionHandler(OutOfStockException.class)
