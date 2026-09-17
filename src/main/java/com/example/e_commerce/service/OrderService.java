@@ -213,8 +213,8 @@ public class OrderService {
             throw new IllegalArgumentException("본인의 주문만 조회할 수 있습니다.");
         }
 
-        String paymentKey = paymentService.getPaymentKey(orderId);
+        Payment payment = paymentService.findByOrderId(orderId).orElse(null);
 
-        return new OrderDetailResponse(order, paymentKey);
+        return new OrderDetailResponse(order, payment);
     }
 }

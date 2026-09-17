@@ -9,6 +9,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
+
 @Service
 @RequiredArgsConstructor
 public class PaymentService {
@@ -41,9 +43,11 @@ public class PaymentService {
         paymentRepository.findByOrderId(orderId).ifPresent(Payment::markAborted);
     }
 
-    public String getPaymentKey(Long orderId) {
-        return paymentRepository.findByOrderId(orderId)
-                .orElseThrow(() -> new IllegalStateException("결제 정보를 찾을 수 없습니다."))
-                .getPaymentKey();
+    /**
+     * 결제 레코드는 없을 수 있다. create 단계에서 실패한 주문이 그렇다.
+     */
+    @Transactional(readOnly = true)
+    public Optional<Payment> findByOrderId(Long orderId) {
+        return paymentRepository.findByOrderId(orderId);
     }
 }
