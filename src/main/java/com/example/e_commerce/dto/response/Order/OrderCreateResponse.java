@@ -1,4 +1,4 @@
-package com.example.e_commerce.dto.response;
+package com.example.e_commerce.dto.response.Order;
 
 import com.example.e_commerce.entity.Order;
 import lombok.Getter;

@@ -8,6 +8,7 @@ import com.example.e_commerce.dto.response.Sku.SkuPriceResponse;
 import com.example.e_commerce.dto.response.Sku.SkuResponse;
 import com.example.e_commerce.dto.response.Sku.SkuStatusResponse;
 import com.example.e_commerce.service.SkuService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,7 +23,7 @@ public class AdminSkuController {
 
     @PostMapping("/products/{productId}/skus")
     public SkuCreateResponse create(@PathVariable Long productId,
-                                    @RequestBody SkuCreateRequest request) {
+                                    @Valid @RequestBody SkuCreateRequest request) {
         return skuService.createSku(productId, request);
     }
 
@@ -39,7 +40,7 @@ public class AdminSkuController {
 
     @PostMapping("/skus/{skuId}/price")
     public SkuPriceResponse changePrice(@PathVariable Long skuId,
-                                        @RequestBody SkuPriceRequest request) {
+                                        @Valid @RequestBody SkuPriceRequest request) {
         return skuService.changePrice(skuId, request);
     }
 }

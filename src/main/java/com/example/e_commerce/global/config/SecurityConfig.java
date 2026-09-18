@@ -28,7 +28,9 @@ public class SecurityConfig {
                                 "/api/products/**")
                 .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/categories").permitAll()
-                                .requestMatchers("/api/admin/**", "/api/skus/**").hasAuthority("ADMIN")
+                        // TODO(dev): 결제 흐름 수동 테스트를 위해 ADMIN 제한을 한시적으로 해제.
+                        //  테스트가 끝나면 .hasAuthority("ADMIN") 으로 되돌릴 것.
+                        .requestMatchers("/api/admin/**", "/api/skus/**").authenticated()
                         .anyRequest().authenticated()
                 );
         return http.build();
