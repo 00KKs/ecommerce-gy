@@ -38,10 +38,18 @@ public class Payment {
     }
 
     public void markDone() {
+        requireReady();
         this.status = PaymentStatus.DONE;
     }
 
     public void markAborted() {
+        requireReady();
         this.status = PaymentStatus.ABORTED;
+    }
+
+    private void requireReady() {
+        if (this.status != PaymentStatus.READY) {
+            throw new IllegalStateException("승인 대기 중인 결제가 아닙니다. status=" + status);
+        }
     }
 }
