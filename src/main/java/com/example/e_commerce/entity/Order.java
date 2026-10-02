@@ -79,6 +79,9 @@ public class Order {
         }
     }
     public void ship() {
+        if (this.status != OrderStatus.CONFIRMED) {
+            throw new IllegalStateException("결제 완료된 주문만 배송할 수 있습니다. status=" + status);
+        }
         this.status = OrderStatus.SHIPPED;
     }
 }
