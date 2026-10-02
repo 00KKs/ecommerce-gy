@@ -108,6 +108,9 @@ public class OrderService {
 
     // 주문 실패 확정일때. 재고 되돌리고 결제는 ABORTED로 전환한다.
     private void failOrder(OrderPreparation preparation) {
+        Order order = orderRepository.findById(preparation.orderId())
+                .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
+        order.cancel();
         restoreStock(preparation);
         paymentService.markAbortedIfExists(preparation.orderId());
     }
