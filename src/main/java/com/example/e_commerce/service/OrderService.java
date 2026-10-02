@@ -30,6 +30,7 @@ public class OrderService {
     private final StockService stockService;
     private final PaymentService paymentService;
     private final PgPaymentClient pgPaymentClient;
+    private final OrderPaymentFinalizer orderPaymentFinalizer;
 
     private final OrderRepository orderRepository;
     private final TransactionTemplate transactionTemplate;
@@ -40,7 +41,8 @@ public class OrderService {
 
         PgPaymentResponse confirmed = confirmPayment(preparation);
 
-        return transactionTemplate.execute(status -> completeOrder(preparation.orderId(), confirmed));
+        Order order = orderPaymentFinalizer.complete(preparation.orderId());
+        return new OrderCreateResponse(order, confirmed.paymentKey());
     }
 
 
@@ -62,7 +64,7 @@ public class OrderService {
             return recover(preparation, e);
 
         } catch (PgPaymentException e) {
-            transactionTemplate.executeWithoutResult(status -> failOrder(preparation));
+            orderPaymentFinalizer.fail(preparation.orderId());
             throw e;
         }
     }
@@ -92,41 +94,16 @@ public class OrderService {
         );
         order.addItem(orderItem);
 
-        return new OrderPreparation(order.getId(), order.getTotalAmount(), skuInfo.skuId(), request.getQuantity());
+        return new OrderPreparation(order.getId(), order.getTotalAmount());
     }
 
-    private OrderCreateResponse completeOrder(Long orderId, PgPaymentResponse confirmed) {
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
-
-        paymentService.markDone(orderId);
-
-        order.confirm();
-
-        return new OrderCreateResponse(order, confirmed.paymentKey());
-    }
-
-    // 주문 실패 확정. 주문 CANCELED → 재고 복원 → 결제 ABORTED.
-    // 재고 복원은 이 메서드에서만 일어난다. cancel() 가드가 PENDING 에서만 통과하므로 한 번만 실행된다.
-    private void failOrder(OrderPreparation preparation) {
-        Order order = orderRepository.findById(preparation.orderId())
-                .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
-        order.cancel();
-        restoreStock(preparation);
-        paymentService.markAbortedIfExists(preparation.orderId());
-    }
-
-    private void restoreStock(OrderPreparation preparation) {
-        stockService.restore(preparation.skuId(), preparation.quantity());
-    }
-
-    private record OrderPreparation(Long orderId, int amount, Long skuId, int quantity) {}
+    private record OrderPreparation(Long orderId, int amount) {}
 
     // 승인 결과 못 받았을때. PG사에 실제 결과를 물어본 후 확정한다.
     private PgPaymentResponse recover(OrderPreparation preparation, PgUnknownResultException cause) {
         if (!cause.isRecoverable()) {
             // create 단계에서 끊긴 경우. paymentKey 가 없어 물어볼 수단이 없다.
-            transactionTemplate.executeWithoutResult(status -> failOrder(preparation));
+            orderPaymentFinalizer.fail(preparation.orderId());
             throw cause;
         }
 
@@ -165,7 +142,7 @@ public class OrderService {
                 }
                 case "ABORTED" -> {
                     log.info("복구 성공: 승인 거절 확인. paymentKey={}", paymentKey);
-                    transactionTemplate.executeWithoutResult(status -> failOrder(preparation));
+                    orderPaymentFinalizer.fail(preparation.orderId());
                     throw new PgPaymentException("PAYMENT_REJECTED", "결제가 거절되었습니다.", cause);
                 }
                 default -> {
