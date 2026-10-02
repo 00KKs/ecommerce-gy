@@ -106,7 +106,8 @@ public class OrderService {
         return new OrderCreateResponse(order, confirmed.paymentKey());
     }
 
-    // 주문 실패 확정일때. 재고 되돌리고 결제는 ABORTED로 전환한다.
+    // 주문 실패 확정. 주문 CANCELED → 재고 복원 → 결제 ABORTED.
+// 재고 복원은 이 메서드에서만 일어난다. cancel() 가드가 PENDING 에서만 통과하므로 한 번만 실행된다.
     private void failOrder(OrderPreparation preparation) {
         Order order = orderRepository.findById(preparation.orderId())
                 .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
@@ -147,8 +148,7 @@ public class OrderService {
                 // 재시도해도 같은 답이 오므로 루프를 끝내되, 승인 여부는 확신할 수 없다.
                 log.error("복구 조회 오류: paymentKey={}, code={}",
                         paymentKey, retrieveRejected.getCode(), retrieveRejected);
-                transactionTemplate.executeWithoutResult(status -> restoreStock(preparation));
-                throw retrieveRejected;
+                throw cause;
             }
 
             if (isMismatched(actual, preparation)) {
