@@ -77,7 +77,7 @@ public class Order {
         if (this.status != OrderStatus.PAYMENT_PENDING) {
             throw new IllegalStateException("결제 대기 중인 주문이 아닙니다. status=" + status);
         }
-
+    }
     public void ship() {
         this.status = OrderStatus.SHIPPED;
     }
