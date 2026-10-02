@@ -107,7 +107,7 @@ public class OrderService {
     }
 
     // 주문 실패 확정. 주문 CANCELED → 재고 복원 → 결제 ABORTED.
-// 재고 복원은 이 메서드에서만 일어난다. cancel() 가드가 PENDING 에서만 통과하므로 한 번만 실행된다.
+    // 재고 복원은 이 메서드에서만 일어난다. cancel() 가드가 PENDING 에서만 통과하므로 한 번만 실행된다.
     private void failOrder(OrderPreparation preparation) {
         Order order = orderRepository.findById(preparation.orderId())
                 .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
@@ -116,7 +116,6 @@ public class OrderService {
         paymentService.markAbortedIfExists(preparation.orderId());
     }
 
-    // 주문 실패가 불확실할때. 재고만 되돌리고 상태 전환은 하지 않는다.
     private void restoreStock(OrderPreparation preparation) {
         stockService.restore(preparation.skuId(), preparation.quantity());
     }
