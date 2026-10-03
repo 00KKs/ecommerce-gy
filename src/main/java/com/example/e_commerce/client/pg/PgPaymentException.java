@@ -16,4 +16,8 @@ public class PgPaymentException extends PgException {
     public boolean isRejected() {
         return "PAYMENT_REJECTED".equals(code);
     }
+
+    public boolean isNotFound() {
+        return "NOT_FOUND_PAYMENT".equals(code);
+    }
 }

@@ -55,7 +55,6 @@ public class PaymentRecoveryScheduler {
         Optional<Payment> found = paymentService.findByOrderId(orderId);
 
         if (found.isEmpty()) {
-            // READY 저장 전에 끊겼다. 승인 요청을 보낸 적이 없으므로 대금이 빠져나갈 수 없다.
             log.info("복구 스케줄러: 결제 레코드 없음, 실패 확정. orderId={}", orderId);
             orderPaymentFinalizer.fail(orderId);
             return;
@@ -68,18 +67,28 @@ public class PaymentRecoveryScheduler {
         try {
             actual = pgPaymentClient.retrieve(paymentKey);
         } catch (PgUnknownResultException e) {
+            // [A] 응답 자체가 없다. PG 장애는 일시적이므로 PENDING 그대로 두고 다음 주기에 다시 묻는다.
             log.warn("복구 스케줄러: 조회 응답 없음, 다음 주기에 재시도. orderId={}, paymentKey={}", orderId, paymentKey);
             return;
         } catch (PgPaymentException e) {
-            // 우리가 발급받은 paymentKey 인데 PG 가 에러로 답했다. 승인 여부를 알 수 없으므로 수동 확인 대상으로 둔다.
-            log.error("복구 스케줄러: 조회 오류, 수동 확인 필요. orderId={}, paymentKey={}, code={}",
+            if (e.isNotFound()) {
+                // PG 에 결제 건이 없다. 승인될 대상이 없으므로 대금이 빠져나갈 수 없다.
+                log.info("복구 스케줄러: PG 결제 건 없음, 실패 확정. orderId={}, paymentKey={}", orderId, paymentKey);
+                orderPaymentFinalizer.fail(orderId);
+                return;
+            }
+            // 그 밖의 에러 응답. 재시도해도 같은 답이 오므로 수동 확인 대상으로 뺀다.
+            log.error("복구 스케줄러: 조회 오류, 수동 확인으로 전환. orderId={}, paymentKey={}, code={}",
                     orderId, paymentKey, e.getCode(), e);
+            orderPaymentFinalizer.holdForReview(orderId);
             return;
         }
 
         if (!String.valueOf(orderId).equals(actual.orderId()) || actual.amount() != payment.getAmount()) {
-            log.error("복구 스케줄러: 조회 불일치, 수동 확인 필요. paymentKey={}, 기대=(orderId={}, amount={}), 실제=(orderId={}, amount={})",
+            // 다른 주문의 결제이거나 금액이 다르다. 어떤 결제가 일어났는지 모르므로 자동 확정하지 않는다.
+            log.error("복구 스케줄러: 조회 불일치, 수동 확인으로 전환. paymentKey={}, 기대=(orderId={}, amount={}), 실제=(orderId={}, amount={})",
                     paymentKey, orderId, payment.getAmount(), actual.orderId(), actual.amount());
+            orderPaymentFinalizer.holdForReview(orderId);
             return;
         }
 
@@ -97,9 +106,14 @@ public class PaymentRecoveryScheduler {
                     log.info("복구 스케줄러: READY 만료, 실패 확정. orderId={}, paymentKey={}", orderId, paymentKey);
                     orderPaymentFinalizer.fail(orderId);
                 }
+                // 만료 전이면 아직 처리 중. 다음 주기에 다시 본다.
             }
-            default -> log.error("복구 스케줄러: 예상하지 못한 상태, 수동 확인 필요. orderId={}, paymentKey={}, status={}",
-                    orderId, paymentKey, actual.status());
+            default -> {
+                // CANCELED 등 이 흐름에서 나올 수 없는 상태.
+                log.error("복구 스케줄러: 예상하지 못한 상태, 수동 확인으로 전환. orderId={}, paymentKey={}, status={}",
+                        orderId, paymentKey, actual.status());
+                orderPaymentFinalizer.holdForReview(orderId);
+            }
         }
     }
 }
