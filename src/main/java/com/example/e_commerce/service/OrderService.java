@@ -43,7 +43,7 @@ public class OrderService {
         String paymentKey = confirmPayment(preparation);
 
         Order order = orderPaymentFinalizer.complete(preparation.orderId());
-        return new OrderCreateResponse(order, paymentKey);
+        return new OrderCreateResponse(order.getId(), order.getStatus(), preparation.amount(), paymentKey);
     }
 
 

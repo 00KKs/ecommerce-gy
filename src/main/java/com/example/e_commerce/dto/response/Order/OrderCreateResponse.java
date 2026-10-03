@@ -1,6 +1,6 @@
 package com.example.e_commerce.dto.response.Order;
 
-import com.example.e_commerce.entity.Order;
+import com.example.e_commerce.entity.OrderStatus;
 import lombok.Getter;
 
 @Getter
@@ -10,10 +10,10 @@ public class OrderCreateResponse {
     private int totalPrice;
     private String paymentKey;
 
-    public OrderCreateResponse(Order order, String paymentKey) {
-        this.orderId = order.getId();
-        this.status = order.getStatus().name();
-        this.totalPrice = order.getTotalAmount();
+    public OrderCreateResponse(Long orderId, OrderStatus status, int totalPrice, String paymentKey) {
+        this.orderId = orderId;
+        this.status = status.name();
+        this.totalPrice = totalPrice;
         this.paymentKey = paymentKey;
     }
 }
