@@ -22,7 +22,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Slf4j
 public class OrderService {
 
-    private static final int RECOVERY_MAX_ATTEMPTS = 4;
+    private static final int RECOVERY_MAX_ATTEMPTS = 2;
     private static final long RECOVERY_INTERVAL_MS = 1000L;
 
     private final AddressService addressService;
@@ -31,6 +31,7 @@ public class OrderService {
     private final PaymentService paymentService;
     private final PgPaymentClient pgPaymentClient;
     private final OrderPaymentFinalizer orderPaymentFinalizer;
+    private final PaymentResolver paymentResolver;
 
     private final OrderRepository orderRepository;
     private final TransactionTemplate transactionTemplate;
@@ -39,15 +40,15 @@ public class OrderService {
         OrderPreparation preparation =
                 transactionTemplate.execute(status -> prepareOrder(memberId, request));
 
-        PgPaymentResponse confirmed = confirmPayment(preparation);
+        String paymentKey = confirmPayment(preparation);
 
         Order order = orderPaymentFinalizer.complete(preparation.orderId());
-        return new OrderCreateResponse(order, confirmed.paymentKey());
+        return new OrderCreateResponse(order, paymentKey);
     }
 
 
-    // PG 결제 건 생성 → READY 저장 → 승인. 응답을 못 받으면 조회로 결과를 확정한다.
-    private PgPaymentResponse confirmPayment(OrderPreparation preparation) {
+    // PG 결제 건 생성 → READY 저장 → 승인. 응답을 못 받으면 조회(필요하면 재승인)로 결과를 확정한다.
+    private String confirmPayment(OrderPreparation preparation) {
         try {
             PgPaymentResponse created =
                     pgPaymentClient.create(preparation.orderId(), preparation.amount());
@@ -58,7 +59,8 @@ public class OrderService {
                     paymentService.ready(preparation.orderId(), preparation.amount(), created.paymentKey()));
 
             return pgPaymentClient.confirm(
-                    created.paymentKey(), preparation.orderId(), preparation.amount());
+                    created.paymentKey(), preparation.orderId(), preparation.amount())
+                    .paymentKey();
 
         } catch (PgUnknownResultException e) {
             return recover(preparation, e);
@@ -99,8 +101,8 @@ public class OrderService {
 
     private record OrderPreparation(Long orderId, int amount) {}
 
-    // 승인 결과 못 받았을때. PG사에 실제 결과를 물어본 후 확정한다.
-    private PgPaymentResponse recover(OrderPreparation preparation, PgUnknownResultException cause) {
+    // 승인 결과를 못 받았을 때. PG 에 확인(필요하면 재승인)해서 확정한다. 확정 못 하면 스케줄러에 넘긴다.
+    private String recover(OrderPreparation preparation, PgUnknownResultException cause) {
         if (!cause.isRecoverable()) {
             // create 단계에서 끊긴 경우. paymentKey 가 없어 물어볼 수단이 없다.
             orderPaymentFinalizer.fail(preparation.orderId());
@@ -110,60 +112,33 @@ public class OrderService {
         String paymentKey = cause.getPaymentKey().orElseThrow();
 
         for (int attempt = 1; attempt <= RECOVERY_MAX_ATTEMPTS; attempt++) {
-            PgPaymentResponse actual;
-            try {
-                actual = pgPaymentClient.retrieve(paymentKey);
-            } catch (PgUnknownResultException retrieveFailed) {
-                log.warn("복구 조회 실패: paymentKey={}, attempt={}/{}",
-                        paymentKey, attempt, RECOVERY_MAX_ATTEMPTS);
-                sleep();
-                continue;
+            Resolution resolution = paymentResolver.resolve(preparation.orderId(), paymentKey, preparation.amount());
+            log.info("복구 시도: orderId={}, paymentKey={}, attempt={}/{}, resolution={}",
+                    preparation.orderId(), paymentKey, attempt, RECOVERY_MAX_ATTEMPTS, resolution);
 
-            } catch (PgPaymentException retrieveRejected) {
-                // PG 가 조회에 에러로 응답했다(예: NOT_FOUND_PAYMENT).
-                // 재시도해도 같은 답이 오므로 루프를 끝내되, 승인 여부는 확신할 수 없다.
-                log.error("복구 조회 오류: paymentKey={}, code={}",
-                        paymentKey, retrieveRejected.getCode(), retrieveRejected);
-                throw cause;
-            }
-
-            if (isMismatched(actual, preparation)) {
-                // 같은 키로 다시 물어도 같은 답이 오므로 재시도는 의미가 없다
-                log.error("복구 조회 불일치: paymentKey={}, 기대=(orderId={}, amount={}), 실제=(orderId={}, amount={})",
-                        paymentKey, preparation.orderId(), preparation.amount(),
-                        actual.orderId(), actual.amount());
-                throw cause;
-            }
-
-            switch (actual.status()) {
-                case "DONE" -> {
-                    log.info("복구 성공: 승인 완료 확인. paymentKey={}, attempt={}", paymentKey, attempt);
-                    return actual;
+            switch (resolution) {
+                case CONFIRMED -> {
+                    return paymentKey;
                 }
-                case "ABORTED" -> {
-                    log.info("복구 성공: 승인 거절 확인. paymentKey={}", paymentKey);
+                case REJECTED -> {
                     orderPaymentFinalizer.fail(preparation.orderId());
                     throw new PgPaymentException("PAYMENT_REJECTED", "결제가 거절되었습니다.", cause);
                 }
-                default -> {
-                    // READY: PG 가 아직 처리 중이다. 재고는 그대로 두고 다시 물어본다.
-                    log.info("복구 대기: 아직 처리 중. paymentKey={}, attempt={}/{}",
-                            paymentKey, attempt, RECOVERY_MAX_ATTEMPTS);
-                    sleep();
+                case NEEDS_REVIEW -> {
+                    orderPaymentFinalizer.holdForReview(preparation.orderId());
+                    throw cause;
+                }
+                case RETRY_LATER -> {
+                    if (attempt < RECOVERY_MAX_ATTEMPTS) {
+                        sleep();   // 마지막 시도 뒤에는 자지 않는다
+                    }
                 }
             }
         }
 
-        log.error("복구 실패: 결과 미확정으로 종료. orderId={}, paymentKey={}",
-                preparation.orderId(), paymentKey);
+        // 끝내 응답을 못 받았다. PENDING 그대로 두면 스케줄러가 이어서 확정한다.
+        log.warn("복구 보류: 스케줄러에 위임. orderId={}, paymentKey={}", preparation.orderId(), paymentKey);
         throw cause;
-    }
-
-
-    // 조회 결과가 정말 이 주문의 결제인지 확인한다.
-    private boolean isMismatched(PgPaymentResponse actual, OrderPreparation preparation) {
-        return !String.valueOf(preparation.orderId()).equals(actual.orderId())
-                || actual.amount() != preparation.amount();
     }
 
     private void sleep() {
