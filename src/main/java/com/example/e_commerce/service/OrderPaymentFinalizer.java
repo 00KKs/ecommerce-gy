@@ -34,6 +34,12 @@ public class OrderPaymentFinalizer {
         paymentService.markAbortedIfExists(orderId);
     }
 
+    @Transactional
+    public void holdForReview(Long orderId) {
+        getOrder(orderId).markPaymentUnknown();
+        // 재고는 건드리지 않는다. 결제가 됐는지 모르기 때문.
+    }
+
     private Order getOrder(Long orderId) {
         return orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));

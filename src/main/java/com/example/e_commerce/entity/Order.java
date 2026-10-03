@@ -73,6 +73,11 @@ public class Order {
         this.status = OrderStatus.CANCELED;
     }
 
+    public void markPaymentUnknown() {
+        requirePaymentPending();
+        this.status = OrderStatus.PAYMENT_UNKNOWN;
+    }
+
     private void requirePaymentPending() {
         if (this.status != OrderStatus.PAYMENT_PENDING) {
             throw new IllegalStateException("결제 대기 중인 주문이 아닙니다. status=" + status);
