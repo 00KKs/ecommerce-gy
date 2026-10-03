@@ -1,3 +1,7 @@
 spring:
   application:
     name: e-commerce
+  jpa:
+    # 영속성 컨텍스트와 DB 커넥션을 트랜잭션 범위로 한정한다.
+    # 켜 두면 주문 요청이 PG 호출 동안 커넥션을 쥐고, 1차 캐시의 옛 상태 때문에 락 이후에도 가드가 오래된 값을 본다.
+    open-in-view: false
