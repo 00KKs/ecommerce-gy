@@ -2,10 +2,12 @@ package com.example.e_commerce.global.exception;
 
 import com.example.e_commerce.client.pg.PgPaymentException;
 import com.example.e_commerce.client.pg.PgUnknownResultException;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -63,5 +65,44 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse("PAYMENT_UNCONFIRMED",
                         "결제 결과를 확인하는 중입니다. 주문 내역에서 상태를 확인해주세요. "
                                 + "다시 결제하지 마세요."));
+    }
+
+    // 같은 멱등키의 주문이 아직 결제 확정 전. 클라이언트는 orderId 로 상태를 조회한다.
+    @ExceptionHandler(OrderInProgressException.class)
+    public ResponseEntity<ErrorResponse> handleOrderInProgress(OrderInProgressException e) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(new ErrorResponse("PAYMENT_UNCONFIRMED", e.getMessage(), e.getOrderId()));
+    }
+
+    // 같은 멱등키의 주문이 이미 실패. 재시도는 새 키로 해야 한다.
+    @ExceptionHandler(OrderAlreadyFailedException.class)
+    public ResponseEntity<ErrorResponse> handleOrderAlreadyFailed(OrderAlreadyFailedException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse("ORDER_ALREADY_FAILED", e.getMessage(), e.getOrderId()));
+    }
+
+    // 같은 멱등키로 다른 내용의 주문을 요청함.
+    @ExceptionHandler(IdempotencyKeyReusedException.class)
+    public ResponseEntity<ErrorResponse> handleIdempotencyKeyReused(IdempotencyKeyReusedException e) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT)
+                .body(new ErrorResponse("IDEMPOTENCY_KEY_REUSED", e.getMessage()));
+    }
+
+    // Idempotency-Key 등 필수 헤더 누락. 처리하지 않으면 Exception 핸들러로 떨어져 500 이 된다.
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ErrorResponse> handleMissingHeader(MissingRequestHeaderException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponse("BAD_REQUEST", e.getHeaderName() + " 헤더가 필요합니다."));
+    }
+
+    // @Validated 컨트롤러의 파라미터 검증 실패. 예: 멱등키가 64자 초과
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConstraintViolation(ConstraintViolationException e) {
+        String message = e.getConstraintViolations().stream()
+                .findFirst()
+                .map(v -> v.getMessage())
+                .orElse("잘못된 요청입니다.");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponse("BAD_REQUEST", message));
     }
 }
