@@ -90,6 +90,12 @@ public class Order {
             throw new IllegalStateException("결제 대기 중인 주문이 아닙니다. status=" + status);
         }
     }
+
+    public boolean isSameRequest(Long skuId, int quantity) {
+        OrderItem item = items.get(0);
+        return item.getSkuId().equals(skuId) && item.getQuantity() == quantity;
+    }
+
     public void ship() {
         if (this.status != OrderStatus.CONFIRMED) {
             throw new IllegalStateException("결제 완료된 주문만 배송할 수 있습니다. status=" + status);
