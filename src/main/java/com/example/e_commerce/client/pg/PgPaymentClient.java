@@ -8,6 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
@@ -70,9 +72,15 @@ public class PgPaymentClient {
         try {
             return call.get();
 
-        } catch (HttpStatusCodeException e) {
-            // PG 가 상태코드로 응답함 = 결과 확정.
+        } catch (HttpClientErrorException e) {
+            // 4xx: PG 가 요청을 보고 거절함 = 결과 확정.
             throw toPaymentException(e);
+
+        } catch (HttpServerErrorException e) {
+            // 5xx: PG 가 처리 도중 실패했거나 앞단 게이트웨이가 대신 응답했다(502/504).
+            // 승인이 반영된 뒤 응답만 실패했을 수 있으므로 실패로 단정하지 않는다.
+            throw toUnknownResult(paymentKey, operation, orderId, startedAt,
+                    "PG 서버 오류 " + e.getStatusCode().value(), e);
 
         } catch (ResourceAccessException e) {
             // 응답 자체가 없음: read timeout, connect timeout, connection refused.
@@ -87,10 +95,22 @@ public class PgPaymentClient {
     }
 
     private PgPaymentException toPaymentException(HttpStatusCodeException e) {
-        PgErrorResponse error = e.getResponseBodyAs(PgErrorResponse.class);
+        PgErrorResponse error = parseError(e);
         String code = (error != null && error.code() != null) ? error.code() : "UNKNOWN";
-        String message = (error != null && error.message() != null) ? error.message() : e.getMessage();
+        String message = (error != null && error.message() != null)
+                ? error.message()
+                : "PG 오류 응답 " + e.getStatusCode().value();
         return new PgPaymentException(code, message, e);
+    }
+
+    private PgErrorResponse parseError(HttpStatusCodeException e) {
+        try {
+            return e.getResponseBodyAs(PgErrorResponse.class);
+        } catch (RestClientException parseFailed) {
+            log.warn("PG 에러 응답 해석 실패: status={}, body={}",
+                    e.getStatusCode().value(), e.getResponseBodyAsString(), parseFailed);
+            return null;
+        }
     }
 
     private PgUnknownResultException toUnknownResult(

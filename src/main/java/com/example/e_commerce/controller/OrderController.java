@@ -6,13 +6,16 @@ import com.example.e_commerce.dto.response.Order.OrderCreateResponse;
 import com.example.e_commerce.dto.response.Order.OrderDetailResponse;
 import com.example.e_commerce.service.OrderService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequiredArgsConstructor
+@Validated
 @RequestMapping("/api/orders")
 public class OrderController {
 
@@ -21,8 +24,9 @@ public class OrderController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public OrderCreateResponse createOrder(@AuthenticationPrincipal CustomUserDetail user,
+                                           @RequestHeader("Idempotency-Key") @Size(min = 1, max = 64) String idempotencyKey,
                                            @Valid @RequestBody OrderCreateRequest request) {
-        return orderService.createOrder(user.getMemberId(), request);
+        return orderService.createOrder(user.getMemberId(), idempotencyKey, request);
     }
 
     @GetMapping("/{orderId}")
