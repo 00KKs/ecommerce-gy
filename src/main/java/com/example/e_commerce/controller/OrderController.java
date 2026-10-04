@@ -24,7 +24,7 @@ public class OrderController {
     public OrderCreateResponse createOrder(@AuthenticationPrincipal CustomUserDetail user,
                                            @RequestHeader("Idempotency-Key") @Size(min = 1, max = 64) String idempotencyKey,
                                            @Valid @RequestBody OrderCreateRequest request) {
-        return orderService.createOrder(user.getMemberId(), request);
+        return orderService.createOrder(user.getMemberId(), idempotencyKey, request);
     }
 
     @GetMapping("/{orderId}")
