@@ -11,7 +11,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "orders")
+@Table(name = "orders",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_orders_member_idempotency_key",
+                columnNames = {"member_id", "idempotency_key"}))
 @Getter
 @NoArgsConstructor
 @EntityListeners(AuditingEntityListener.class)
@@ -23,6 +26,9 @@ public class Order {
 
     @Column(nullable = false, name = "member_id")
     private Long memberId;
+
+    @Column(name = "idempotency_key", length = 64)
+    private String idempotencyKey;
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL)
     private List<OrderItem> items = new ArrayList<>();
@@ -45,9 +51,10 @@ public class Order {
 
     private String deliveryRequest;
 
-    public Order(Long memberId, String recipientName, String recipientPhone,
+    public Order(Long memberId, String idempotencyKey, String recipientName, String recipientPhone,
                  String address, String deliveryRequest) {
         this.memberId = memberId;
+        this.idempotencyKey = idempotencyKey;
         this.recipientName = recipientName;
         this.recipientPhone = recipientPhone;
         this.address = address;
