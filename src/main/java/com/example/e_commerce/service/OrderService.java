@@ -10,12 +10,19 @@ import com.example.e_commerce.dto.response.Order.OrderCreateResponse;
 import com.example.e_commerce.dto.response.Order.OrderDetailResponse;
 import com.example.e_commerce.dto.response.Sku.SkuOrderInfo;
 import com.example.e_commerce.entity.*;
+import com.example.e_commerce.global.exception.IdempotencyKeyReusedException;
+import com.example.e_commerce.global.exception.OrderAlreadyFailedException;
+import com.example.e_commerce.global.exception.OrderInProgressException;
 import com.example.e_commerce.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -24,6 +31,7 @@ public class OrderService {
 
     private static final int RECOVERY_MAX_ATTEMPTS = 2;
     private static final long RECOVERY_INTERVAL_MS = 1000L;
+    private static final String IDEMPOTENCY_KEY_CONSTRAINT = "uk_orders_member_idempotency_key";
 
     private final AddressService addressService;
     private final SkuService skuService;
@@ -36,9 +44,23 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final TransactionTemplate transactionTemplate;
 
-    public OrderCreateResponse createOrder(Long memberId, OrderCreateRequest request) {
-        OrderPreparation preparation =
-                transactionTemplate.execute(status -> prepareOrder(memberId, request));
+    public OrderCreateResponse createOrder(Long memberId, String idempotencyKey, OrderCreateRequest request) {
+        // 같은 키로 이미 시도한 주문이 있으면 새로 만들지 않고 그 결과로 응답한다.
+        Optional<OrderCreateResponse> replayed = replayIfExists(memberId, idempotencyKey, request);
+        if (replayed.isPresent()) {
+            return replayed.get();
+        }
+
+        OrderPreparation preparation;
+        try {
+            preparation = transactionTemplate.execute(status -> prepareOrder(memberId, idempotencyKey, request));
+        } catch (DataIntegrityViolationException e) {
+            // 같은 키의 요청이 동시에 들어와 다른 쪽이 먼저 주문을 만들었다.
+            if (!isIdempotencyKeyViolation(e)) {
+                throw e;
+            }
+            return replayIfExists(memberId, idempotencyKey, request).orElseThrow(() -> e);
+        }
 
         String paymentKey = confirmPayment(preparation);
 
@@ -71,11 +93,13 @@ public class OrderService {
         }
     }
 
-    public OrderPreparation prepareOrder(Long memberId, OrderCreateRequest request) {
+    // 주문 INSERT 가 재고 차감보다 먼저다. 같은 키의 동시 요청은 재고 락을 잡기 전에 유니크 제약에서 걸러진다.
+    private OrderPreparation prepareOrder(Long memberId, String idempotencyKey, OrderCreateRequest request) {
         DefaultAddressInfo defaultAddress = addressService.getDefaultAddress(memberId);
 
         Order order = new Order(
                 memberId,
+                idempotencyKey,
                 defaultAddress.recipientName(),
                 defaultAddress.recipientPhone(),
                 defaultAddress.address(),
@@ -161,5 +185,38 @@ public class OrderService {
         Payment payment = paymentService.findByOrderId(orderId).orElse(null);
 
         return new OrderDetailResponse(order, payment);
+    }
+
+    // 기존 주문의 현재 상태로 응답을 재구성한다. 성공이면 값을 돌려주고, 그 외는 예외로 알린다.
+    // replay 가 지연 로딩되는 items 를 읽으므로 트랜잭션 안에서 실행한다.
+    private Optional<OrderCreateResponse> replayIfExists(Long memberId, String idempotencyKey, OrderCreateRequest request) {
+        return transactionTemplate.execute(status ->
+                orderRepository.findByMemberIdAndIdempotencyKey(memberId, idempotencyKey)
+                        .map(order -> replay(order, request)));
+    }
+
+    private OrderCreateResponse replay(Order order, OrderCreateRequest request) {
+        if (!order.isSameRequest(request.getSkuId(), request.getQuantity())) {
+            throw new IdempotencyKeyReusedException();
+        }
+
+        log.info("멱등 재요청: orderId={}, status={}", order.getId(), order.getStatus());
+
+        return switch (order.getStatus()) {
+            case CONFIRMED, SHIPPED -> {
+                String paymentKey = paymentService.findByOrderId(order.getId())
+                        .map(Payment::getPaymentKey)
+                        .orElse(null);
+                yield new OrderCreateResponse(order.getId(), order.getStatus(), order.getTotalAmount(), paymentKey);
+            }
+            case PAYMENT_PENDING, PAYMENT_UNKNOWN -> throw new OrderInProgressException(order.getId());
+            case CANCELED -> throw new OrderAlreadyFailedException(order.getId());
+        };
+    }
+
+    // 멱등키 유니크 제약 위반인지 확인한다. 다른 제약 위반까지 삼키지 않기 위해서다.
+    private boolean isIdempotencyKeyViolation(DataIntegrityViolationException e) {
+        return e.getCause() instanceof ConstraintViolationException cve
+                && IDEMPOTENCY_KEY_CONSTRAINT.equalsIgnoreCase(cve.getConstraintName());
     }
 }
