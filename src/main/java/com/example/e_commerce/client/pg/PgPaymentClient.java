@@ -95,10 +95,22 @@ public class PgPaymentClient {
     }
 
     private PgPaymentException toPaymentException(HttpStatusCodeException e) {
-        PgErrorResponse error = e.getResponseBodyAs(PgErrorResponse.class);
+        PgErrorResponse error = parseError(e);
         String code = (error != null && error.code() != null) ? error.code() : "UNKNOWN";
-        String message = (error != null && error.message() != null) ? error.message() : e.getMessage();
+        String message = (error != null && error.message() != null)
+                ? error.message()
+                : "PG 오류 응답 " + e.getStatusCode().value();
         return new PgPaymentException(code, message, e);
+    }
+
+    private PgErrorResponse parseError(HttpStatusCodeException e) {
+        try {
+            return e.getResponseBodyAs(PgErrorResponse.class);
+        } catch (RestClientException parseFailed) {
+            log.warn("PG 에러 응답 해석 실패: status={}, body={}",
+                    e.getStatusCode().value(), e.getResponseBodyAsString(), parseFailed);
+            return null;
+        }
     }
 
     private PgUnknownResultException toUnknownResult(
