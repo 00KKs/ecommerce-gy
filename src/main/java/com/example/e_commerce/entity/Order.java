@@ -63,6 +63,7 @@ public class Order {
         this.status = OrderStatus.PAYMENT_PENDING;
     }
 
+    // 결제 기한. 주문 생성 후 이 시간 안에서만 결제 시도를 시작할 수 있다.
     public static final Duration PAYMENT_WINDOW = Duration.ofMinutes(15);
 
     public void addItem(OrderItem item) {
@@ -97,17 +98,17 @@ public class Order {
     public void markPaymentFailed() {
         requirePaymentPending();
         this.status = OrderStatus.PAYMENT_FAILED;
-        }
+    }
 
-        // 결제 기한이 지나도록 결제되지 않은 주문을 취소한다.
-        public void expire(LocalDateTime now) {
-            if (this.status != OrderStatus.PAYMENT_FAILED) {
-                throw new IllegalStateException("결제 실패 상태의 주문만 만료할 수 있습니다. status=" + status);
-            }
-            if (!isPaymentWindowClosed(now)) {
-                throw new IllegalStateException("아직 결제 기한이 남은 주문입니다.");
-            }
-            this.status = OrderStatus.CANCELED;
+    // 결제 기한이 지나도록 결제되지 않은 주문을 취소한다.
+    public void expire(LocalDateTime now) {
+        if (this.status != OrderStatus.PAYMENT_FAILED) {
+            throw new IllegalStateException("결제 실패 상태의 주문만 만료할 수 있습니다. status=" + status);
+        }
+        if (!isPaymentWindowClosed(now)) {
+            throw new IllegalStateException("아직 결제 기한이 남은 주문입니다.");
+        }
+        this.status = OrderStatus.CANCELED;
     }
 
     public boolean isPaymentWindowClosed(LocalDateTime now) {

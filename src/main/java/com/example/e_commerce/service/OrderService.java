@@ -3,7 +3,6 @@ package com.example.e_commerce.service;
 import com.example.e_commerce.client.pg.PgPaymentClient;
 import com.example.e_commerce.client.pg.PgPaymentException;
 import com.example.e_commerce.client.pg.PgUnknownResultException;
-import com.example.e_commerce.client.pg.dto.response.PgPaymentResponse;
 import com.example.e_commerce.dto.request.Order.OrderCreateRequest;
 import com.example.e_commerce.dto.response.Address.DefaultAddressInfo;
 import com.example.e_commerce.dto.response.Order.OrderCreateResponse;
@@ -13,6 +12,7 @@ import com.example.e_commerce.entity.*;
 import com.example.e_commerce.global.exception.IdempotencyKeyReusedException;
 import com.example.e_commerce.global.exception.OrderAlreadyFailedException;
 import com.example.e_commerce.global.exception.OrderInProgressException;
+import com.example.e_commerce.global.exception.OrderPaymentFailedException;
 import com.example.e_commerce.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Service
@@ -63,32 +64,32 @@ public class OrderService {
 
         String paymentKey = confirmPayment(preparation);
 
-        Order order = complete(preparation.orderId());
+        Order order = complete(preparation.orderId(), paymentKey);
         return new OrderCreateResponse(order.getId(), order.getStatus(), preparation.amount(), paymentKey);
     }
 
 
     // PG 결제 건 생성 → READY 저장 → 승인. 응답을 못 받으면 조회(필요하면 재승인)로 결과를 확정한다.
     private String confirmPayment(OrderPreparation preparation) {
+        String paymentKey = null;   // create 가 성공해야 채워진다. null 이면 결제 시도 레코드가 없다.
         try {
-            PgPaymentResponse created =
-                    pgPaymentClient.create(preparation.orderId(), preparation.amount());
+            paymentKey = pgPaymentClient.create(preparation.orderId(), preparation.amount()).paymentKey();
+            String readyKey = paymentKey;
 
             // 승인을 요청하기 전에 READY 를 먼저 커밋한다.
             // 이후 confirm 이 타임아웃 나도 paymentKey 가 DB 에 남아 조회로 복구할 수 있다.
             transactionTemplate.executeWithoutResult(status ->
-                    paymentService.ready(preparation.orderId(), preparation.amount(), created.paymentKey()));
+                    paymentService.ready(preparation.orderId(), preparation.amount(), readyKey));
 
-            return pgPaymentClient.confirm(
-                    created.paymentKey(), preparation.orderId(), preparation.amount())
+            return pgPaymentClient.confirm(paymentKey, preparation.orderId(), preparation.amount())
                     .paymentKey();
 
         } catch (PgUnknownResultException e) {
             return recover(preparation, e);
 
         } catch (PgPaymentException e) {
-            fail(preparation.orderId());
-            throw e;
+            failPayment(preparation.orderId(), paymentKey);
+            throw new OrderPaymentFailedException(preparation.orderId(), e);
         }
     }
 
@@ -128,8 +129,9 @@ public class OrderService {
     private String recover(OrderPreparation preparation, PgUnknownResultException cause) {
         if (!cause.isRecoverable()) {
             // create 단계에서 끊긴 경우. paymentKey 가 없어 물어볼 수단이 없다.
-            fail(preparation.orderId());
-            throw cause;
+            // 승인 요청을 보내지 않았으므로 대금은 빠져나가지 않았다. 재결제 가능 상태로 둔다.
+            failPayment(preparation.orderId(), null);
+            throw new OrderPaymentFailedException(preparation.orderId(), cause);
         }
 
         String paymentKey = cause.getPaymentKey().orElseThrow();
@@ -144,8 +146,8 @@ public class OrderService {
                     return paymentKey;
                 }
                 case REJECTED -> {
-                    fail(preparation.orderId());
-                    throw new PgPaymentException("PAYMENT_REJECTED", "결제가 거절되었습니다.", cause);
+                    failPayment(preparation.orderId(), paymentKey);
+                    throw new OrderPaymentFailedException(preparation.orderId(), cause);
                 }
                 case NEEDS_REVIEW -> {
                     holdForReview(preparation.orderId());
@@ -209,6 +211,7 @@ public class OrderService {
                 yield new OrderCreateResponse(order.getId(), order.getStatus(), order.getTotalAmount(), paymentKey);
             }
             case PAYMENT_PENDING, PAYMENT_UNKNOWN -> throw new OrderInProgressException(order.getId());
+            case PAYMENT_FAILED -> throw new OrderPaymentFailedException(order.getId());
             case CANCELED -> throw new OrderAlreadyFailedException(order.getId());
         };
     }
@@ -219,24 +222,35 @@ public class OrderService {
                 && IDEMPOTENCY_KEY_CONSTRAINT.equalsIgnoreCase(cve.getConstraintName());
     }
 
-    // 승인 확정. 주문 CONFIRMED → 결제 DONE.
-    public Order complete(Long orderId) {
+    // 승인 확정. 주문 CONFIRMED → 해당 결제 시도 DONE.
+    public Order complete(Long orderId, String paymentKey) {
         return transactionTemplate.execute(status -> {
             Order order = getOrderForUpdate(orderId);
             order.confirm();
-            paymentService.markDone(orderId);
+            paymentService.markDone(paymentKey);
             return order;
         });
     }
 
-    // 주문 실패 확정. 주문 CANCELED → 재고 복원 → 결제 ABORTED.
-    // 재고 복원은 이 메서드에서만 일어난다. 주문 락 + cancel() 가드로 동시에 호출돼도 한 번만 실행된다.
-    public void fail(Long orderId) {
+    // 결제 시도 실패 확정. 주문 PAYMENT_FAILED → 해당 결제 시도 ABORTED.
+    // 재고는 그대로 둔다. 결제 기한 안에 재결제할 수 있다.
+    // paymentKey 가 null 이면 PG 결제 생성 단계에서 실패해 결제 시도 레코드가 없는 경우다.
+    public void failPayment(Long orderId, String paymentKey) {
+        transactionTemplate.executeWithoutResult(status -> {
+            getOrderForUpdate(orderId).markPaymentFailed();
+            if (paymentKey != null) {
+                paymentService.markAborted(paymentKey);
+            }
+        });
+    }
+
+    // 결제 기한이 지난 주문을 취소하고 재고를 돌려준다.
+    // 재고 복원은 이 메서드에서만 일어난다. 주문 락 + expire() 가드로 동시에 호출돼도 한 번만 실행된다.
+    public void expire(Long orderId) {
         transactionTemplate.executeWithoutResult(status -> {
             Order order = getOrderForUpdate(orderId);
-            order.cancel();
+            order.expire(LocalDateTime.now());
             order.getItems().forEach(item -> stockService.restore(item.getSkuId(), item.getQuantity()));
-            paymentService.markAbortedIfExists(orderId);
         });
     }
 

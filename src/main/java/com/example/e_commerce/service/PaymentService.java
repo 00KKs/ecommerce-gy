@@ -42,7 +42,7 @@ public class PaymentService {
     }
 
     private Payment getByPaymentKey(String paymentKey) {
-               return paymentRepository.findByPaymentKey(paymentKey)
-                       .orElseThrow(() -> new IllegalStateException("결제 정보를 찾을 수 없습니다. paymentKey=" + paymentKey));
+        return paymentRepository.findByPaymentKey(paymentKey)
+                .orElseThrow(() -> new IllegalStateException("결제 정보를 찾을 수 없습니다. paymentKey=" + paymentKey));
     }
 }

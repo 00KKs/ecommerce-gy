@@ -15,7 +15,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
-// 요청 스레드에서 확정하지 못하고 PAYMENT_PENDING 으로 남은 주문을 PG 조회(필요하면 재승인)로 확정한다.
+// 1) 요청 스레드에서 확정하지 못하고 PAYMENT_PENDING 으로 남은 주문을 PG 조회(필요하면 재승인)로 확정한다.
+// 2) 결제 기한이 지난 PAYMENT_FAILED 주문을 취소하고 재고를 돌려준다.
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -44,13 +45,28 @@ public class PaymentRecoveryScheduler {
         }
     }
 
+    @Scheduled(fixedDelay = 60_000)
+    public void expireUnpaid() {
+        List<Order> targets = orderRepository.findTop50ByStatusAndCreatedAtBeforeOrderByIdAsc(
+                OrderStatus.PAYMENT_FAILED, LocalDateTime.now().minus(Order.PAYMENT_WINDOW));
+
+        for (Order order : targets) {
+            try {
+                orderService.expire(order.getId());
+            } catch (Exception e) {
+                // 조회 이후 재결제가 시작돼 상태가 바뀌었을 수 있다. 가드에 걸린 것이므로 건너뛴다.
+                log.warn("만료 처리 실패: orderId={}", order.getId(), e);
+            }
+        }
+    }
+
     private void recoverOne(Order order) {
         Long orderId = order.getId();
         Optional<Payment> found = paymentService.findLatestByOrderId(orderId);
 
         if (found.isEmpty()) {
-            log.info("복구 스케줄러: 결제 레코드 없음, 실패 확정. orderId={}", orderId);
-            orderService.fail(orderId);
+            log.info("복구 스케줄러: 결제 레코드 없음, 결제 실패 확정. orderId={}", orderId);
+            orderService.failPayment(orderId, null);
             return;
         }
 
@@ -59,8 +75,8 @@ public class PaymentRecoveryScheduler {
         log.info("복구 스케줄러: orderId={}, paymentKey={}, resolution={}", orderId, payment.getPaymentKey(), resolution);
 
         switch (resolution) {
-            case CONFIRMED -> orderService.complete(orderId);
-            case REJECTED -> orderService.fail(orderId);
+            case CONFIRMED -> orderService.complete(orderId, payment.getPaymentKey());
+            case REJECTED -> orderService.failPayment(orderId, payment.getPaymentKey());
             case NEEDS_REVIEW -> orderService.holdForReview(orderId);
             case RETRY_LATER -> { /* PENDING 그대로. 다음 주기에 다시 묻는다. */ }
         }
