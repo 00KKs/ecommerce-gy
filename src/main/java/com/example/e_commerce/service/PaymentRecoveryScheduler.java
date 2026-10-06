@@ -46,7 +46,7 @@ public class PaymentRecoveryScheduler {
 
     private void recoverOne(Order order) {
         Long orderId = order.getId();
-        Optional<Payment> found = paymentService.findByOrderId(orderId);
+        Optional<Payment> found = paymentService.findLatestByOrderId(orderId);
 
         if (found.isEmpty()) {
             log.info("복구 스케줄러: 결제 레코드 없음, 실패 확정. orderId={}", orderId);

@@ -28,19 +28,19 @@ public class PaymentService {
     }
 
     public void markDone(Long orderId) {
-        paymentRepository.findByOrderId(orderId)
+        paymentRepository.findTopByOrderIdOrderByIdDesc(orderId)
                 .orElseThrow(() -> new IllegalStateException("결제 정보를 찾을 수 없습니다."))
                 .markDone();
     }
 
     // created 단계에서 실패시 paymennt가 남아있지 않다. 아무것도 하지 않는다.
     public void markAbortedIfExists(Long orderId) {
-        paymentRepository.findByOrderId(orderId).ifPresent(Payment::markAborted);
+        paymentRepository.findTopByOrderIdOrderByIdDesc(orderId).ifPresent(Payment::markAborted);
     }
 
-    // created 단계에서 실패시 payment 없을 수 있다.
+    // 주문의 최신 결제 시도. created 단계에서 실패시 payment 없을 수 있다.
     @Transactional(readOnly = true)
-    public Optional<Payment> findByOrderId(Long orderId) {
-        return paymentRepository.findByOrderId(orderId);
+    public Optional<Payment> findLatestByOrderId(Long orderId) {
+        return paymentRepository.findTopByOrderIdOrderByIdDesc(orderId);
     }
 }

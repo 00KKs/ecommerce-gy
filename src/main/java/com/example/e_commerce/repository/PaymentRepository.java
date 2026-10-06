@@ -7,5 +7,6 @@ import java.util.Optional;
 
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
-    Optional<Payment> findByOrderId(Long orderId);
+    // 주문의 가장 최근 결제 시도.
+    Optional<Payment> findTopByOrderIdOrderByIdDesc(Long orderId);
 }

@@ -181,7 +181,7 @@ public class OrderService {
             throw new IllegalArgumentException("본인의 주문만 조회할 수 있습니다.");
         }
 
-        Payment payment = paymentService.findByOrderId(orderId).orElse(null);
+        Payment payment = paymentService.findLatestByOrderId(orderId).orElse(null);
 
         return new OrderDetailResponse(order, payment);
     }
@@ -203,7 +203,7 @@ public class OrderService {
 
         return switch (order.getStatus()) {
             case CONFIRMED, SHIPPED -> {
-                String paymentKey = paymentService.findByOrderId(order.getId())
+                String paymentKey = paymentService.findLatestByOrderId(order.getId())
                         .map(Payment::getPaymentKey)
                         .orElse(null);
                 yield new OrderCreateResponse(order.getId(), order.getStatus(), order.getTotalAmount(), paymentKey);
