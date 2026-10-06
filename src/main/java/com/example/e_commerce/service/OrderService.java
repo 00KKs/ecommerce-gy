@@ -38,7 +38,6 @@ public class OrderService {
     private final StockService stockService;
     private final PaymentService paymentService;
     private final PgPaymentClient pgPaymentClient;
-    private final OrderPaymentFinalizer orderPaymentFinalizer;
     private final PaymentResolver paymentResolver;
 
     private final OrderRepository orderRepository;
@@ -64,7 +63,7 @@ public class OrderService {
 
         String paymentKey = confirmPayment(preparation);
 
-        Order order = orderPaymentFinalizer.complete(preparation.orderId());
+        Order order = complete(preparation.orderId());
         return new OrderCreateResponse(order.getId(), order.getStatus(), preparation.amount(), paymentKey);
     }
 
@@ -88,7 +87,7 @@ public class OrderService {
             return recover(preparation, e);
 
         } catch (PgPaymentException e) {
-            orderPaymentFinalizer.fail(preparation.orderId());
+            fail(preparation.orderId());
             throw e;
         }
     }
@@ -129,7 +128,7 @@ public class OrderService {
     private String recover(OrderPreparation preparation, PgUnknownResultException cause) {
         if (!cause.isRecoverable()) {
             // create 단계에서 끊긴 경우. paymentKey 가 없어 물어볼 수단이 없다.
-            orderPaymentFinalizer.fail(preparation.orderId());
+            fail(preparation.orderId());
             throw cause;
         }
 
@@ -145,11 +144,11 @@ public class OrderService {
                     return paymentKey;
                 }
                 case REJECTED -> {
-                    orderPaymentFinalizer.fail(preparation.orderId());
+                    fail(preparation.orderId());
                     throw new PgPaymentException("PAYMENT_REJECTED", "결제가 거절되었습니다.", cause);
                 }
                 case NEEDS_REVIEW -> {
-                    orderPaymentFinalizer.holdForReview(preparation.orderId());
+                    holdForReview(preparation.orderId());
                     throw cause;
                 }
                 case RETRY_LATER -> {
@@ -218,5 +217,37 @@ public class OrderService {
     private boolean isIdempotencyKeyViolation(DataIntegrityViolationException e) {
         return e.getCause() instanceof ConstraintViolationException cve
                 && IDEMPOTENCY_KEY_CONSTRAINT.equalsIgnoreCase(cve.getConstraintName());
+    }
+
+    // 승인 확정. 주문 CONFIRMED → 결제 DONE.
+    public Order complete(Long orderId) {
+        return transactionTemplate.execute(status -> {
+            Order order = getOrderForUpdate(orderId);
+            order.confirm();
+            paymentService.markDone(orderId);
+            return order;
+        });
+    }
+
+    // 주문 실패 확정. 주문 CANCELED → 재고 복원 → 결제 ABORTED.
+    // 재고 복원은 이 메서드에서만 일어난다. 주문 락 + cancel() 가드로 동시에 호출돼도 한 번만 실행된다.
+    public void fail(Long orderId) {
+        transactionTemplate.executeWithoutResult(status -> {
+            Order order = getOrderForUpdate(orderId);
+            order.cancel();
+            order.getItems().forEach(item -> stockService.restore(item.getSkuId(), item.getQuantity()));
+            paymentService.markAbortedIfExists(orderId);
+        });
+    }
+
+    // 재고는 건드리지 않는다. 결제가 됐는지 모르기 때문.
+    public void holdForReview(Long orderId) {
+        transactionTemplate.executeWithoutResult(status ->
+                getOrderForUpdate(orderId).markPaymentUnknown());
+    }
+
+    private Order getOrderForUpdate(Long orderId) {
+        return orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
     }
 }

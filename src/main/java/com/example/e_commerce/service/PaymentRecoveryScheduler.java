@@ -27,7 +27,7 @@ public class PaymentRecoveryScheduler {
     private final OrderRepository orderRepository;
     private final PaymentService paymentService;
     private final PaymentResolver paymentResolver;
-    private final OrderPaymentFinalizer orderPaymentFinalizer;
+    private final OrderService orderService;
 
     @Scheduled(fixedDelay = 30_000)
     public void recover() {
@@ -50,7 +50,7 @@ public class PaymentRecoveryScheduler {
 
         if (found.isEmpty()) {
             log.info("복구 스케줄러: 결제 레코드 없음, 실패 확정. orderId={}", orderId);
-            orderPaymentFinalizer.fail(orderId);
+            orderService.fail(orderId);
             return;
         }
 
@@ -59,9 +59,9 @@ public class PaymentRecoveryScheduler {
         log.info("복구 스케줄러: orderId={}, paymentKey={}, resolution={}", orderId, payment.getPaymentKey(), resolution);
 
         switch (resolution) {
-            case CONFIRMED -> orderPaymentFinalizer.complete(orderId);
-            case REJECTED -> orderPaymentFinalizer.fail(orderId);
-            case NEEDS_REVIEW -> orderPaymentFinalizer.holdForReview(orderId);
+            case CONFIRMED -> orderService.complete(orderId);
+            case REJECTED -> orderService.fail(orderId);
+            case NEEDS_REVIEW -> orderService.holdForReview(orderId);
             case RETRY_LATER -> { /* PENDING 그대로. 다음 주기에 다시 묻는다. */ }
         }
     }
