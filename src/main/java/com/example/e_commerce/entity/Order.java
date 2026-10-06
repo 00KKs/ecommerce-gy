@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -62,6 +63,8 @@ public class Order {
         this.status = OrderStatus.PAYMENT_PENDING;
     }
 
+    public static final Duration PAYMENT_WINDOW = Duration.ofMinutes(15);
+
     public void addItem(OrderItem item) {
         items.add(item);
     }
@@ -73,11 +76,6 @@ public class Order {
     public void confirm() {
         requirePaymentPending();
         this.status = OrderStatus.CONFIRMED;
-    }
-
-    public void cancel() {
-        requirePaymentPending();
-        this.status = OrderStatus.CANCELED;
     }
 
     public void markPaymentUnknown() {
@@ -94,6 +92,26 @@ public class Order {
     public boolean isSameRequest(Long skuId, int quantity) {
         OrderItem item = items.get(0);
         return item.getSkuId().equals(skuId) && item.getQuantity() == quantity;
+    }
+
+    public void markPaymentFailed() {
+        requirePaymentPending();
+        this.status = OrderStatus.PAYMENT_FAILED;
+        }
+
+        // 결제 기한이 지나도록 결제되지 않은 주문을 취소한다.
+        public void expire(LocalDateTime now) {
+            if (this.status != OrderStatus.PAYMENT_FAILED) {
+                throw new IllegalStateException("결제 실패 상태의 주문만 만료할 수 있습니다. status=" + status);
+            }
+            if (!isPaymentWindowClosed(now)) {
+                throw new IllegalStateException("아직 결제 기한이 남은 주문입니다.");
+            }
+            this.status = OrderStatus.CANCELED;
+    }
+
+    public boolean isPaymentWindowClosed(LocalDateTime now) {
+        return !now.isBefore(createdAt.plus(PAYMENT_WINDOW));
     }
 
     public void ship() {
