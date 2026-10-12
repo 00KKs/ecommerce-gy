@@ -35,4 +35,12 @@ public class OrderController {
         return orderService.getOrder(user.getMemberId(), orderId);
     }
 
+    // 재결제용
+    @PostMapping("/{orderId}/payments")
+    public OrderCreateResponse repay(@AuthenticationPrincipal CustomUserDetail user,
+                                     @PathVariable Long orderId,
+                                     @RequestHeader("Idempotency-Key") @Size(min = 1, max = 64) String idempotencyKey) {
+        return orderService.repay(user.getMemberId(), orderId, idempotencyKey);
+    }
+
 }
