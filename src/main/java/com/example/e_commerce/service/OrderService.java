@@ -11,6 +11,7 @@ import com.example.e_commerce.dto.response.Sku.SkuOrderInfo;
 import com.example.e_commerce.entity.*;
 import com.example.e_commerce.global.exception.IdempotencyKeyReusedException;
 import com.example.e_commerce.global.exception.OrderAlreadyFailedException;
+import com.example.e_commerce.global.exception.OrderAlreadyPaidException;
 import com.example.e_commerce.global.exception.OrderInProgressException;
 import com.example.e_commerce.global.exception.OrderPaymentFailedException;
 import com.example.e_commerce.repository.*;
@@ -51,9 +52,9 @@ public class OrderService {
             return replayed.get();
         }
 
-        OrderPreparation preparation;
+        PaymentTarget target;
         try {
-            preparation = transactionTemplate.execute(status -> prepareOrder(memberId, idempotencyKey, request));
+            target = transactionTemplate.execute(status -> prepareOrder(memberId, idempotencyKey, request));
         } catch (DataIntegrityViolationException e) {
             // 같은 키의 요청이 동시에 들어와 다른 쪽이 먼저 주문을 만들었다.
             if (!isIdempotencyKeyViolation(e)) {
@@ -62,39 +63,108 @@ public class OrderService {
             return replayIfExists(memberId, idempotencyKey, request).orElseThrow(() -> e);
         }
 
-        String paymentKey = confirmPayment(preparation);
+        String paymentKey = confirmPayment(target, null);
 
-        Order order = complete(preparation.orderId(), paymentKey);
-        return new OrderCreateResponse(order.getId(), order.getStatus(), preparation.amount(), paymentKey);
+        Order order = complete(target.orderId(), paymentKey);
+        return new OrderCreateResponse(order.getId(), order.getStatus(), target.amount(), paymentKey);
     }
 
+    // 재결제. 결제 기한 안의 PAYMENT_FAILED 주문에 새 결제 시도를 연다.
+    // 같은 멱등키로 다시 오면 그 키로 만든 결제 시도의 결과로 응답한다.
+    public OrderCreateResponse repay(Long memberId, Long orderId, String idempotencyKey) {
+        Optional<OrderCreateResponse> replayed = transactionTemplate.execute(status ->
+                replayRepayIfExists(memberId, orderId, idempotencyKey));
+        if (replayed.isPresent()) {
+            return replayed.get();
+        }
+
+        PaymentTarget target = transactionTemplate.execute(status -> startRepayment(memberId, orderId));
+
+        String paymentKey = confirmPayment(target, idempotencyKey);
+
+        Order order = complete(orderId, paymentKey);
+        return new OrderCreateResponse(order.getId(), order.getStatus(), target.amount(), paymentKey);
+    }
+
+    // 주문 락 안에서 상태를 확인하고 PAYMENT_FAILED → PAYMENT_PENDING 으로 전이한다.
+    // 이 상태 전이가 이중 결제 가드다. 동시에 들어온 두 번째 요청은 PENDING 을 보고 거부된다.
+    private PaymentTarget startRepayment(Long memberId, Long orderId) {
+        Order order = getOrderForUpdate(orderId);
+        requireOwner(order, memberId);
+
+        switch (order.getStatus()) {
+            case PAYMENT_FAILED -> { }
+            case PAYMENT_PENDING, PAYMENT_UNKNOWN -> throw new OrderInProgressException(orderId);
+            case CONFIRMED, SHIPPED -> throw new OrderAlreadyPaidException(orderId);
+            case CANCELED -> throw new OrderAlreadyFailedException(orderId);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        if (order.isPaymentWindowClosed(now)) {
+            // 스케줄러가 아직 취소하지 않았을 뿐 만료된 주문이다.
+            throw new OrderAlreadyFailedException(orderId);
+        }
+
+        order.startRepayment(now);
+        log.info("재결제 시작: orderId={}", orderId);
+        return new PaymentTarget(orderId, order.getTotalAmount());
+    }
+
+    private Optional<OrderCreateResponse> replayRepayIfExists(Long memberId, Long orderId, String idempotencyKey) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
+        requireOwner(order, memberId);
+
+        return paymentService.findByOrderIdAndIdempotencyKey(orderId, idempotencyKey)
+                .map(payment -> replayRepay(order, payment));
+    }
+
+    private OrderCreateResponse replayRepay(Order order, Payment payment) {
+        log.info("재결제 멱등 재요청: orderId={}, paymentKey={}, status={}",
+                order.getId(), payment.getPaymentKey(), payment.getStatus());
+
+        return switch (payment.getStatus()) {
+            case DONE -> new OrderCreateResponse(
+                    order.getId(), order.getStatus(), payment.getAmount(), payment.getPaymentKey());
+            case READY -> throw new OrderInProgressException(order.getId());
+            case ABORTED -> throw new OrderPaymentFailedException(order.getId());
+            case CANCELED -> throw new IllegalStateException("예상하지 못한 결제 상태입니다. status=" + payment.getStatus());
+        };
+    }
+
+    private void requireOwner(Order order, Long memberId) {
+        if (!order.getMemberId().equals(memberId)) {
+            throw new IllegalArgumentException("본인의 주문만 결제할 수 있습니다.");
+        }
+    }
 
     // PG 결제 건 생성 → READY 저장 → 승인. 응답을 못 받으면 조회(필요하면 재승인)로 결과를 확정한다.
-    private String confirmPayment(OrderPreparation preparation) {
+    // idempotencyKey 는 재결제 요청의 멱등키다. 최초 주문의 결제 시도는 null 이다.
+    private String confirmPayment(PaymentTarget target, String idempotencyKey) {
         String paymentKey = null;   // create 가 성공해야 채워진다. null 이면 결제 시도 레코드가 없다.
         try {
-            paymentKey = pgPaymentClient.create(preparation.orderId(), preparation.amount()).paymentKey();
+            paymentKey = pgPaymentClient.create(target.orderId(), target.amount()).paymentKey();
             String readyKey = paymentKey;
 
             // 승인을 요청하기 전에 READY 를 먼저 커밋한다.
             // 이후 confirm 이 타임아웃 나도 paymentKey 가 DB 에 남아 조회로 복구할 수 있다.
             transactionTemplate.executeWithoutResult(status ->
-                    paymentService.ready(preparation.orderId(), preparation.amount(), readyKey));
+                    paymentService.ready(target.orderId(), target.amount(), readyKey, idempotencyKey));
 
-            return pgPaymentClient.confirm(paymentKey, preparation.orderId(), preparation.amount())
+            return pgPaymentClient.confirm(paymentKey, target.orderId(), target.amount())
                     .paymentKey();
 
         } catch (PgUnknownResultException e) {
-            return recover(preparation, e);
+            return recover(target, e);
 
         } catch (PgPaymentException e) {
-            failPayment(preparation.orderId(), paymentKey);
-            throw new OrderPaymentFailedException(preparation.orderId(), e);
+            failPayment(target.orderId(), paymentKey);
+            throw new OrderPaymentFailedException(target.orderId(), e);
         }
     }
 
     // 주문 INSERT 가 재고 차감보다 먼저다. 같은 키의 동시 요청은 재고 락을 잡기 전에 유니크 제약에서 걸러진다.
-    private OrderPreparation prepareOrder(Long memberId, String idempotencyKey, OrderCreateRequest request) {
+    private PaymentTarget prepareOrder(Long memberId, String idempotencyKey, OrderCreateRequest request) {
         DefaultAddressInfo defaultAddress = addressService.getDefaultAddress(memberId);
 
         Order order = new Order(
@@ -120,13 +190,13 @@ public class OrderService {
         );
         order.addItem(orderItem);
 
-        return new OrderPreparation(order.getId(), order.getTotalAmount());
+        return new PaymentTarget(order.getId(), order.getTotalAmount());
     }
 
-    private record OrderPreparation(Long orderId, int amount) {}
+    private record PaymentTarget(Long orderId, int amount) {}
 
     // 승인 결과를 못 받았을 때. PG 에 확인(필요하면 재승인)해서 확정한다. 확정 못 하면 스케줄러에 넘긴다.
-    private String recover(OrderPreparation preparation, PgUnknownResultException cause) {
+    private String recover(PaymentTarget preparation, PgUnknownResultException cause) {
         if (!cause.isRecoverable()) {
             // create 단계에서 끊긴 경우. paymentKey 가 없어 물어볼 수단이 없다.
             // 승인 요청을 보내지 않았으므로 대금은 빠져나가지 않았다. 재결제 가능 상태로 둔다.
