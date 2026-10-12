@@ -3,6 +3,7 @@ package com.example.e_commerce.service;
 import com.example.e_commerce.entity.Order;
 import com.example.e_commerce.entity.OrderStatus;
 import com.example.e_commerce.entity.Payment;
+import com.example.e_commerce.entity.PaymentStatus;
 import com.example.e_commerce.entity.Resolution;
 import com.example.e_commerce.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
@@ -32,7 +33,7 @@ public class PaymentRecoveryScheduler {
 
     @Scheduled(fixedDelay = 30_000)
     public void recover() {
-        List<Order> targets = orderRepository.findTop50ByStatusAndCreatedAtBeforeOrderByIdAsc(
+        List<Order> targets = orderRepository.findTop50ByStatusAndPaymentStartedAtBeforeOrderByIdAsc(
                 OrderStatus.PAYMENT_PENDING, LocalDateTime.now().minus(PENDING_GRACE));
 
         for (Order order : targets) {
@@ -64,8 +65,10 @@ public class PaymentRecoveryScheduler {
         Long orderId = order.getId();
         Optional<Payment> found = paymentService.findLatestByOrderId(orderId);
 
-        if (found.isEmpty()) {
-            log.info("복구 스케줄러: 결제 레코드 없음, 결제 실패 확정. orderId={}", orderId);
+        // 진행 중인 결제 시도가 저장되지 않았다. 최초 주문의 PG 생성 단계에서 끊겼거나,
+        // 재결제를 시작한 뒤 새 결제 시도를 저장하기 전에 끊긴 경우다.
+        if (found.isEmpty() || found.get().getStatus() != PaymentStatus.READY) {
+            log.info("복구 스케줄러: 진행 중인 결제 시도 없음, 결제 실패 확정. orderId={}", orderId);
             orderService.failPayment(orderId, null);
             return;
         }
