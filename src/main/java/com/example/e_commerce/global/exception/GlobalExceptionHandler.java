@@ -113,4 +113,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ErrorResponse("BAD_REQUEST", message));
     }
+
+    // 이미 결제가 완료된 주문에 재결제를 요청함.
+    @ExceptionHandler(OrderAlreadyPaidException.class)
+    public ResponseEntity<ErrorResponse> handleOrderAlreadyPaid(OrderAlreadyPaidException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse("ORDER_ALREADY_PAID", e.getMessage(), e.getOrderId()));
+    }
 }
