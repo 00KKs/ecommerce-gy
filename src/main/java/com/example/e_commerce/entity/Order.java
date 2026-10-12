@@ -52,6 +52,9 @@ public class Order {
 
     private String deliveryRequest;
 
+    @Column(nullable = false)
+    private LocalDateTime paymentStartedAt;
+
     public Order(Long memberId, String idempotencyKey, String recipientName, String recipientPhone,
                  String address, String deliveryRequest) {
         this.memberId = memberId;
@@ -61,6 +64,7 @@ public class Order {
         this.address = address;
         this.deliveryRequest = deliveryRequest;
         this.status = OrderStatus.PAYMENT_PENDING;
+        this.paymentStartedAt = LocalDateTime.now();
     }
 
     // 결제 기한. 주문 생성 후 이 시간 안에서만 결제 시도를 시작할 수 있다.
@@ -109,6 +113,17 @@ public class Order {
             throw new IllegalStateException("아직 결제 기한이 남은 주문입니다.");
         }
         this.status = OrderStatus.CANCELED;
+    }
+
+    public void startRepayment(LocalDateTime now) {
+        if (this.status != OrderStatus.PAYMENT_FAILED) {
+            throw new IllegalStateException("결제 실패 상태의 주문만 재결제할 수 있습니다. status=" + status);
+        }
+        if (isPaymentWindowClosed(now)) {
+            throw new IllegalStateException("결제 기한이 지난 주문입니다.");
+        }
+        this.status = OrderStatus.PAYMENT_PENDING;
+        this.paymentStartedAt = now;
     }
 
     public boolean isPaymentWindowClosed(LocalDateTime now) {
