@@ -5,7 +5,10 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(indexes = @Index(name = "idx_payment_order_id", columnList = "order_id"))
+@Table(indexes = @Index(name = "idx_payment_order_id", columnList = "order_id"),
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_payment_order_idempotency_key",
+                columnNames = {"order_id", "idempotency_key"}))
 @Getter
 @NoArgsConstructor
 public class Payment {
@@ -28,15 +31,20 @@ public class Payment {
     @Column(nullable = false, unique = true)
     private String paymentKey;
 
-    private Payment(Order order, int amount, PaymentStatus status, String paymentKey) {
+    // 재결제 요청의 멱등키. 최초 주문의 결제 시도는 주문 멱등키로 보호되므로 null.
+    @Column(name = "idempotency_key", length = 64)
+    private String idempotencyKey;
+
+    private Payment(Order order, int amount, PaymentStatus status, String paymentKey, String idempotencyKey) {
         this.order = order;
         this.amount = amount;
         this.status = status;
         this.paymentKey = paymentKey;
+        this.idempotencyKey = idempotencyKey;
     }
 
-    public static Payment ready(Order order, int amount, String paymentKey) {
-        return new Payment(order, amount, PaymentStatus.READY, paymentKey);
+    public static Payment ready(Order order, int amount, String paymentKey, String idempotencyKey) {
+        return new Payment(order, amount, PaymentStatus.READY, paymentKey, idempotencyKey);
     }
 
     public void markDone() {
