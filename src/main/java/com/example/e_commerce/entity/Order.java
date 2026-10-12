@@ -94,7 +94,12 @@ public class Order {
         }
     }
 
+    // 멱등 재요청이 최초 요청과 같은 내용인지 확인한다.
+    // 주문 요청은 단일 상품이므로 아이템이 정확히 하나라는 전제다. 다중 상품 주문이 생기면 요청 지문 비교로 바꾼다.
     public boolean isSameRequest(Long skuId, int quantity) {
+        if (items.size() != 1) {
+            throw new IllegalStateException("단일 상품 주문만 멱등 비교를 지원합니다. items=" + items.size());
+        }
         OrderItem item = items.get(0);
         return item.getSkuId().equals(skuId) && item.getQuantity() == quantity;
     }

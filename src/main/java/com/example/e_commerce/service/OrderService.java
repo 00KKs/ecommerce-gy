@@ -72,25 +72,29 @@ public class OrderService {
     // 재결제. 결제 기한 안의 PAYMENT_FAILED 주문에 새 결제 시도를 연다.
     // 같은 멱등키로 다시 오면 그 키로 만든 결제 시도의 결과로 응답한다.
     public OrderCreateResponse repay(Long memberId, Long orderId, String idempotencyKey) {
-        Optional<OrderCreateResponse> replayed = transactionTemplate.execute(status ->
-                replayRepayIfExists(memberId, orderId, idempotencyKey));
-        if (replayed.isPresent()) {
-            return replayed.get();
+        RepayStart start = transactionTemplate.execute(status -> startRepayment(memberId, orderId, idempotencyKey));
+        if (start.replayed() != null) {
+            return start.replayed();
         }
 
-        PaymentTarget target = transactionTemplate.execute(status -> startRepayment(memberId, orderId));
-
+        PaymentTarget target = start.target();
         String paymentKey = confirmPayment(target, idempotencyKey);
 
-        Order order = complete(orderId, paymentKey);
+        Order order = complete(target.orderId(), paymentKey);
         return new OrderCreateResponse(order.getId(), order.getStatus(), target.amount(), paymentKey);
     }
 
-    // 주문 락 안에서 상태를 확인하고 PAYMENT_FAILED → PAYMENT_PENDING 으로 전이한다.
-    // 이 상태 전이가 이중 결제 가드다. 동시에 들어온 두 번째 요청은 PENDING 을 보고 거부된다.
-    private PaymentTarget startRepayment(Long memberId, Long orderId) {
+    // 주문 락 안에서 멱등 재요청인지 확인하고, 아니면 PAYMENT_FAILED → PAYMENT_PENDING 으로 전이한다.
+    // 락 안에서 확인해야 같은 키의 요청이 겹쳐도 나중 요청이 앞선 요청이 남긴 결제 시도를 보고 재생한다.
+    // 이 상태 전이가 이중 결제 가드다. 동시에 들어온 다른 키의 요청은 PENDING 을 보고 거부된다.
+    private RepayStart startRepayment(Long memberId, Long orderId, String idempotencyKey) {
         Order order = getOrderForUpdate(orderId);
         requireOwner(order, memberId);
+
+        Optional<Payment> attempt = paymentService.findByOrderIdAndIdempotencyKey(orderId, idempotencyKey);
+        if (attempt.isPresent()) {
+            return RepayStart.ofReplay(replayRepay(order, attempt.get()));
+        }
 
         switch (order.getStatus()) {
             case PAYMENT_FAILED -> { }
@@ -107,16 +111,18 @@ public class OrderService {
 
         order.startRepayment(now);
         log.info("재결제 시작: orderId={}", orderId);
-        return new PaymentTarget(orderId, order.getTotalAmount());
+        return RepayStart.ofStarted(new PaymentTarget(orderId, order.getTotalAmount()));
     }
 
-    private Optional<OrderCreateResponse> replayRepayIfExists(Long memberId, Long orderId, String idempotencyKey) {
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
-        requireOwner(order, memberId);
+    // 재결제 시작 결과. 같은 키의 결제 시도가 있으면 replayed, 새 시도를 열었으면 target 이 채워진다.
+    private record RepayStart(OrderCreateResponse replayed, PaymentTarget target) {
+        static RepayStart ofReplay(OrderCreateResponse response) {
+            return new RepayStart(response, null);
+        }
 
-        return paymentService.findByOrderIdAndIdempotencyKey(orderId, idempotencyKey)
-                .map(payment -> replayRepay(order, payment));
+        static RepayStart ofStarted(PaymentTarget target) {
+            return new RepayStart(null, target);
+        }
     }
 
     private OrderCreateResponse replayRepay(Order order, Payment payment) {
