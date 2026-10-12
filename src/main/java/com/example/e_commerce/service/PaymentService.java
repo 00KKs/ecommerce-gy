@@ -20,11 +20,11 @@ public class PaymentService {
 
 
     // 승인 결과를 받기 전에 커밋되어야 타임아웃 이후에도 paymentKey 가 살아남는다.
-    public Payment ready(Long orderId, int amount, String paymentKey) {
+    public Payment ready(Long orderId, int amount, String paymentKey, String idempotencyKey) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
 
-        return paymentRepository.save(Payment.ready(order, amount, paymentKey));
+        return paymentRepository.save(Payment.ready(order, amount, paymentKey, idempotencyKey));
     }
 
     public void markDone(String paymentKey) {
@@ -44,5 +44,10 @@ public class PaymentService {
     private Payment getByPaymentKey(String paymentKey) {
         return paymentRepository.findByPaymentKey(paymentKey)
                 .orElseThrow(() -> new IllegalStateException("결제 정보를 찾을 수 없습니다. paymentKey=" + paymentKey));
+    }
+
+    // 재결제 멱등키로 만든 결제 시도.
+    public Optional<Payment> findByOrderIdAndIdempotencyKey(Long orderId, String idempotencyKey) {
+        return paymentRepository.findByOrderIdAndIdempotencyKey(orderId, idempotencyKey);
     }
 }
