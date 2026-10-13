@@ -65,21 +65,38 @@ public class PaymentRecoveryScheduler {
         Long orderId = order.getId();
         Optional<Payment> found = paymentService.findLatestByOrderId(orderId);
 
-        // 진행 중인 결제 시도가 저장되지 않았다. 최초 주문의 PG 생성 단계에서 끊겼거나,
-        // 재결제를 시작한 뒤 새 결제 시도를 저장하기 전에 끊긴 경우다.
-        if (found.isEmpty() || found.get().getStatus() != PaymentStatus.READY) {
-            log.info("복구 스케줄러: 진행 중인 결제 시도 없음, 결제 실패 확정. orderId={}", orderId);
+        if (found.isEmpty()) {
+            // 결제 시도 행을 먼저 저장하기 전에 만든 이전 주문이다.
+            log.info("복구 스케줄러: 결제 시도 없음, 결제 실패 확정. orderId={}", orderId);
             orderService.failPayment(orderId, null);
             return;
         }
 
         Payment payment = found.get();
+        switch (payment.getStatus()) {
+            case REQUESTED -> {
+                // PG 결제 생성 중에 끊겼다. 승인 요청 전이므로 대금은 빠져나가지 않았다.
+                // 이 시도를 ABORTED 로 정리하면, 늦게 깨어난 요청 스레드는 markReady 에서 멈춘다.
+                log.info("복구 스케줄러: 결제 생성 중 끊긴 시도, 결제 실패 확정. orderId={}, paymentId={}", orderId, payment.getId());
+                orderService.failPayment(orderId, payment.getId());
+                return;
+            }
+            case READY -> { /* 아래에서 PG 에 묻는다 */ }
+            default -> {
+                // PENDING 주문의 최신 시도가 DONE/ABORTED 인 것은 일어나지 않아야 하는 상태다. 사람이 본다.
+                log.error("주문과 결제 시도 상태 불일치: orderId={}, paymentId={}, status={}",
+                        orderId, payment.getId(), payment.getStatus());
+                orderService.holdForReview(orderId);
+                return;
+            }
+        }
+
         Resolution resolution = paymentResolver.resolve(orderId, payment.getPaymentKey(), payment.getAmount());
         log.info("복구 스케줄러: orderId={}, paymentKey={}, resolution={}", orderId, payment.getPaymentKey(), resolution);
 
         switch (resolution) {
-            case CONFIRMED -> orderService.complete(orderId, payment.getPaymentKey());
-            case REJECTED -> orderService.failPayment(orderId, payment.getPaymentKey());
+            case CONFIRMED -> orderService.complete(orderId, payment.getId());
+            case REJECTED -> orderService.failPayment(orderId, payment.getId());
             case NEEDS_REVIEW -> orderService.holdForReview(orderId);
             case RETRY_LATER -> { /* PENDING 그대로. 다음 주기에 다시 묻는다. */ }
         }
