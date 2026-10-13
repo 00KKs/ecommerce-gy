@@ -227,7 +227,7 @@ public class OrderService {
                 }
                 case NEEDS_REVIEW -> {
                     holdForReview(preparation.orderId());
-                    throw cause;
+                    throw new OrderInProgressException(preparation.orderId(), cause);
                 }
                 case RETRY_LATER -> {
                     if (attempt < RECOVERY_MAX_ATTEMPTS) {

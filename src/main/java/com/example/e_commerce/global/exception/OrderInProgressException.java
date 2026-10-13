@@ -9,7 +9,11 @@ public class OrderInProgressException extends RuntimeException {
     private final Long orderId;
 
     public OrderInProgressException(Long orderId) {
-        super("결제 결과를 확인하는 중입니다.");
+        this(orderId, null);
+    }
+
+    public OrderInProgressException(Long orderId, Throwable cause) {
+        super("결제 결과를 확인하는 중입니다.", cause);
         this.orderId = orderId;
     }
 }
