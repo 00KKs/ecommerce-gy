@@ -10,7 +10,5 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     // 주문의 가장 최근 결제 시도.
     Optional<Payment> findTopByOrderIdOrderByIdDesc(Long orderId);
 
-    Optional<Payment> findByPaymentKey(String paymentKey);
-
     Optional<Payment> findByOrderIdAndIdempotencyKey(Long orderId, String idempotencyKey);
 }
