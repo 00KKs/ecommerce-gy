@@ -74,12 +74,13 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse("PAYMENT_UNCONFIRMED", e.getMessage(), e.getOrderId()));
     }
 
-    // 결제 시도 실패. 클라이언트는 orderId 로 재결제한다.
+    // 결제 시도 실패. 클라이언트는 reason 을 보고 결제 수단 변경이나 재시도를 안내하고, orderId 로 재결제한다.
     @ExceptionHandler(OrderPaymentFailedException.class)
     public ResponseEntity<ErrorResponse> handleOrderPaymentFailed(OrderPaymentFailedException e) {
-        log.info("결제 실패: orderId={}", e.getOrderId(), e.getCause());
+        log.info("결제 실패: orderId={}, reason={}", e.getOrderId(), e.getReason(), e.getCause());
+        String reason = e.getReason() != null ? e.getReason().name() : null;
         return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED)
-                .body(new ErrorResponse("PAYMENT_FAILED", e.getMessage(), e.getOrderId()));
+                .body(new ErrorResponse("PAYMENT_FAILED", e.getMessage(), e.getOrderId(), reason));
     }
 
     // 같은 멱등키의 주문이 이미 실패. 재시도는 새 키로 해야 한다.
