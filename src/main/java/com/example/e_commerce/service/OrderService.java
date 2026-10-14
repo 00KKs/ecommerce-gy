@@ -135,7 +135,7 @@ public class OrderService {
             case DONE -> new OrderCreateResponse(
                     order.getId(), order.getStatus(), payment.getAmount(), payment.getPaymentKey());
             case REQUESTED, READY -> throw new OrderInProgressException(order.getId());
-            case ABORTED -> throw new OrderPaymentFailedException(order.getId());
+            case ABORTED -> throw new OrderPaymentFailedException(order.getId(), payment.getFailureReason());
             case CANCELED -> throw new IllegalStateException("예상하지 못한 결제 상태입니다. status=" + payment.getStatus());
         };
     }
@@ -154,8 +154,9 @@ public class OrderService {
             paymentKey = pgPaymentClient.create(target.orderId(), target.amount()).paymentKey();
         } catch (PgUnknownResultException | PgPaymentException e) {
             // 결제 생성이 거절됐거나 결과를 모른다. 승인 요청을 보내지 않았으므로 대금은 빠져나가지 않았다.
-            failPayment(target.orderId(), target.paymentId());
-            throw new OrderPaymentFailedException(target.orderId(), e);
+            PaymentFailureReason reason = classify(e);
+            failPayment(target.orderId(), target.paymentId(), reason);
+            throw new OrderPaymentFailedException(target.orderId(), reason, e);
         }
 
         markReady(target, paymentKey);
@@ -169,9 +170,24 @@ public class OrderService {
             return paymentKey;
 
         } catch (PgPaymentException e) {
-            failPayment(target.orderId(), target.paymentId());
-            throw new OrderPaymentFailedException(target.orderId(), e);
+            PaymentFailureReason reason = classify(e);
+            failPayment(target.orderId(), target.paymentId(), reason);
+            throw new OrderPaymentFailedException(target.orderId(), reason, e);
         }
+    }
+
+    private PaymentFailureReason classify(RuntimeException e) {
+        if (e instanceof PgPaymentException pe) {
+            if (pe.isRejected()) {
+                return PaymentFailureReason.PAYMENT_DECLINED;
+            }
+            if (pe.isNotFound()) {
+                return PaymentFailureReason.PG_UNAVAILABLE;
+            }
+            return PaymentFailureReason.PAYMENT_ERROR;
+        }
+        // 응답 없음, 5xx, 응답 해석 실패
+        return PaymentFailureReason.PG_UNAVAILABLE;
     }
 
     // PG 가 발급한 paymentKey 를 결제 시도에 기록한다(REQUESTED → READY).
@@ -240,8 +256,8 @@ public class OrderService {
                     return;
                 }
                 case REJECTED -> {
-                    failPayment(target.orderId(), target.paymentId());
-                    throw new OrderPaymentFailedException(target.orderId(), cause);
+                    failPayment(target.orderId(), target.paymentId(), PaymentFailureReason.PAYMENT_DECLINED);
+                    throw new OrderPaymentFailedException(target.orderId(), PaymentFailureReason.PAYMENT_DECLINED, cause);
                 }
                 case NEEDS_REVIEW -> {
                     holdForReview(target.orderId());
@@ -306,7 +322,12 @@ public class OrderService {
                 yield new OrderCreateResponse(order.getId(), order.getStatus(), order.getTotalAmount(), paymentKey);
             }
             case PAYMENT_PENDING, PAYMENT_UNKNOWN -> throw new OrderInProgressException(order.getId());
-            case PAYMENT_FAILED -> throw new OrderPaymentFailedException(order.getId());
+            case PAYMENT_FAILED -> {
+                PaymentFailureReason reason = paymentService.findLatestByOrderId(order.getId())
+                        .map(Payment::getFailureReason)
+                        .orElse(null);
+                throw new OrderPaymentFailedException(order.getId(), reason);
+            }
             case CANCELED -> throw new OrderAlreadyFailedException(order.getId());
         };
     }
@@ -339,7 +360,7 @@ public class OrderService {
     // 재고는 그대로 둔다. 결제 기한 안에 재결제할 수 있다.
     // paymentId 가 null 이면 결제 시도 행을 먼저 저장하기 전에 만든 이전 주문이다.
     // 이미 같은 결과로 확정됐으면 아무것도 하지 않는다.
-    public void failPayment(Long orderId, Long paymentId) {
+    public void failPayment(Long orderId, Long paymentId, PaymentFailureReason reason) {
         transactionTemplate.executeWithoutResult(status -> {
             Order order = getOrderForUpdate(orderId);
             Payment payment = paymentId == null ? null : paymentService.getById(paymentId);
@@ -352,7 +373,7 @@ public class OrderService {
 
             order.markPaymentFailed();
             if (payment != null) {
-                payment.markAborted();
+                payment.markAborted(reason);
             }
         });
     }
