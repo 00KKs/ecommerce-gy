@@ -34,6 +34,11 @@ public class Payment {
     @Column(name = "payment_key")
     private String paymentKey;
 
+    // 실패한 결제 시도의 사유
+    @Enumerated(EnumType.STRING)
+    @Column(name = "failure_reason")
+    private PaymentFailureReason failureReason;
+
     // 재결제 요청의 멱등키. 최초 주문의 결제 시도는 주문 멱등키로 보호되므로 null.
     @Column(name = "idempotency_key", length = 64)
     private String idempotencyKey;
@@ -66,10 +71,11 @@ public class Payment {
     }
 
     // 실패 확정. PG 결제 생성 단계(REQUESTED)와 승인 단계(READY) 모두에서 올 수 있다.
-    public void markAborted() {
+    public void markAborted(PaymentFailureReason reason) {
         if (this.status != PaymentStatus.REQUESTED && this.status != PaymentStatus.READY) {
             throw new IllegalStateException("진행 중인 결제 시도가 아닙니다. status=" + status);
         }
         this.status = PaymentStatus.ABORTED;
+        this.failureReason = reason;
     }
 }
