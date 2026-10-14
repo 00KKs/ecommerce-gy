@@ -3,6 +3,7 @@ package com.example.e_commerce.service;
 import com.example.e_commerce.entity.Order;
 import com.example.e_commerce.entity.OrderStatus;
 import com.example.e_commerce.entity.Payment;
+import com.example.e_commerce.entity.PaymentFailureReason;
 import com.example.e_commerce.entity.PaymentStatus;
 import com.example.e_commerce.entity.Resolution;
 import com.example.e_commerce.repository.OrderRepository;
@@ -68,7 +69,7 @@ public class PaymentRecoveryScheduler {
         if (found.isEmpty()) {
             // 결제 시도 행을 먼저 저장하기 전에 만든 이전 주문이다.
             log.info("복구 스케줄러: 결제 시도 없음, 결제 실패 확정. orderId={}", orderId);
-            orderService.failPayment(orderId, null);
+            orderService.failPayment(orderId, null, null);
             return;
         }
 
@@ -78,7 +79,7 @@ public class PaymentRecoveryScheduler {
                 // PG 결제 생성 중에 끊겼다. 승인 요청 전이므로 대금은 빠져나가지 않았다.
                 // 이 시도를 ABORTED 로 정리하면, 늦게 깨어난 요청 스레드는 markReady 에서 멈춘다.
                 log.info("복구 스케줄러: 결제 생성 중 끊긴 시도, 결제 실패 확정. orderId={}, paymentId={}", orderId, payment.getId());
-                orderService.failPayment(orderId, payment.getId());
+                orderService.failPayment(orderId, payment.getId(), PaymentFailureReason.PG_UNAVAILABLE);
                 return;
             }
             case READY -> { /* 아래에서 PG 에 묻는다 */ }
@@ -96,7 +97,7 @@ public class PaymentRecoveryScheduler {
 
         switch (resolution) {
             case CONFIRMED -> orderService.complete(orderId, payment.getId());
-            case REJECTED -> orderService.failPayment(orderId, payment.getId());
+            case REJECTED -> orderService.failPayment(orderId, payment.getId(), PaymentFailureReason.PAYMENT_DECLINED);
             case NEEDS_REVIEW -> orderService.holdForReview(orderId);
             case RETRY_LATER -> { /* PENDING 그대로. 다음 주기에 다시 묻는다. */ }
         }
