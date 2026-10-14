@@ -9,14 +9,20 @@ public class ErrorResponse {
     private String code;
     private String message;
     private Long orderId;
+    private String reason;
 
     public ErrorResponse(String code, String message) {
         this(code, message, null);
     }
 
     public ErrorResponse(String code, String message, Long orderId) {
+        this(code, message, orderId, null);
+    }
+
+    public ErrorResponse(String code, String message, Long orderId, String reason) {
         this.code = code;
         this.message = message;
         this.orderId = orderId;
+        this.reason = reason;
     }
 }
