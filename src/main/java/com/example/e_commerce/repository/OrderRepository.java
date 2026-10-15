@@ -14,8 +14,11 @@ import java.util.Optional;
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
-    // 복구 스케줄러용. 유예 시간이 지난 결제 대기 주문을 오래된 순으로 50건씩 가져온다.
+    // 만료 스케줄러용. 생성 후 일정 시간이 지난 주문을 오래된 순으로 50건씩 가져온다.
     List<Order> findTop50ByStatusAndCreatedAtBeforeOrderByIdAsc(OrderStatus status, LocalDateTime createdAt);
+
+    // 복구 스케줄러용. 결제 시도를 시작한 지 유예 시간이 지난 주문을 오래된 순으로 50건씩 가져온다.
+    List<Order> findTop50ByStatusAndPaymentStartedAtBeforeOrderByIdAsc(OrderStatus status, LocalDateTime paymentStartedAt);
 
     Optional<Order> findByMemberIdAndIdempotencyKey(Long memberId, String idempotencyKey);
 

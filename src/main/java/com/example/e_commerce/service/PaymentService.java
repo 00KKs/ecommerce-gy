@@ -2,8 +2,6 @@ package com.example.e_commerce.service;
 
 import com.example.e_commerce.entity.Order;
 import com.example.e_commerce.entity.Payment;
-import com.example.e_commerce.entity.PaymentStatus;
-import com.example.e_commerce.repository.OrderRepository;
 import com.example.e_commerce.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -16,31 +14,25 @@ import java.util.Optional;
 public class PaymentService {
 
     private final PaymentRepository paymentRepository;
-    private final OrderRepository orderRepository;
 
-
-    // 승인 결과를 받기 전에 커밋되어야 타임아웃 이후에도 paymentKey 가 살아남는다.
-    public Payment ready(Long orderId, int amount, String paymentKey) {
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
-
-        return paymentRepository.save(Payment.ready(order, amount, paymentKey));
+    // 결제 시도를 연다. 주문 상태 전이와 같은 트랜잭션에서 호출되어 PG 호출 전에 커밋된다.
+    public Payment request(Order order, int amount, String idempotencyKey) {
+        return paymentRepository.save(Payment.request(order, amount, idempotencyKey));
     }
 
-    public void markDone(Long orderId) {
-        paymentRepository.findByOrderId(orderId)
-                .orElseThrow(() -> new IllegalStateException("결제 정보를 찾을 수 없습니다."))
-                .markDone();
+    public Payment getById(Long paymentId) {
+        return paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new IllegalStateException("결제 시도를 찾을 수 없습니다. paymentId=" + paymentId));
     }
 
-    // created 단계에서 실패시 paymennt가 남아있지 않다. 아무것도 하지 않는다.
-    public void markAbortedIfExists(Long orderId) {
-        paymentRepository.findByOrderId(orderId).ifPresent(Payment::markAborted);
-    }
-
-    // created 단계에서 실패시 payment 없을 수 있다.
+    // 주문의 최신 결제 시도.
     @Transactional(readOnly = true)
-    public Optional<Payment> findByOrderId(Long orderId) {
-        return paymentRepository.findByOrderId(orderId);
+    public Optional<Payment> findLatestByOrderId(Long orderId) {
+        return paymentRepository.findTopByOrderIdOrderByIdDesc(orderId);
+    }
+
+    // 재결제 멱등키로 만든 결제 시도.
+    public Optional<Payment> findByOrderIdAndIdempotencyKey(Long orderId, String idempotencyKey) {
+        return paymentRepository.findByOrderIdAndIdempotencyKey(orderId, idempotencyKey);
     }
 }

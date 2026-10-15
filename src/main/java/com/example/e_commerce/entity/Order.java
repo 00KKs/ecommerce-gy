@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -51,6 +52,9 @@ public class Order {
 
     private String deliveryRequest;
 
+    @Column(nullable = false)
+    private LocalDateTime paymentStartedAt;
+
     public Order(Long memberId, String idempotencyKey, String recipientName, String recipientPhone,
                  String address, String deliveryRequest) {
         this.memberId = memberId;
@@ -60,7 +64,11 @@ public class Order {
         this.address = address;
         this.deliveryRequest = deliveryRequest;
         this.status = OrderStatus.PAYMENT_PENDING;
+        this.paymentStartedAt = LocalDateTime.now();
     }
+
+    // 결제 기한. 주문 생성 후 이 시간 안에서만 결제 시도를 시작할 수 있다.
+    public static final Duration PAYMENT_WINDOW = Duration.ofMinutes(15);
 
     public void addItem(OrderItem item) {
         items.add(item);
@@ -75,11 +83,6 @@ public class Order {
         this.status = OrderStatus.CONFIRMED;
     }
 
-    public void cancel() {
-        requirePaymentPending();
-        this.status = OrderStatus.CANCELED;
-    }
-
     public void markPaymentUnknown() {
         requirePaymentPending();
         this.status = OrderStatus.PAYMENT_UNKNOWN;
@@ -91,9 +94,45 @@ public class Order {
         }
     }
 
+    // 멱등 재요청이 최초 요청과 같은 내용인지 확인한다.
+    // 주문 요청은 단일 상품이므로 아이템이 정확히 하나라는 전제다. 다중 상품 주문이 생기면 요청 지문 비교로 바꾼다.
     public boolean isSameRequest(Long skuId, int quantity) {
+        if (items.size() != 1) {
+            throw new IllegalStateException("단일 상품 주문만 멱등 비교를 지원합니다. items=" + items.size());
+        }
         OrderItem item = items.get(0);
         return item.getSkuId().equals(skuId) && item.getQuantity() == quantity;
+    }
+
+    public void markPaymentFailed() {
+        requirePaymentPending();
+        this.status = OrderStatus.PAYMENT_FAILED;
+    }
+
+    // 결제 기한이 지나도록 결제되지 않은 주문을 취소한다.
+    public void expire(LocalDateTime now) {
+        if (this.status != OrderStatus.PAYMENT_FAILED) {
+            throw new IllegalStateException("결제 실패 상태의 주문만 만료할 수 있습니다. status=" + status);
+        }
+        if (!isPaymentWindowClosed(now)) {
+            throw new IllegalStateException("아직 결제 기한이 남은 주문입니다.");
+        }
+        this.status = OrderStatus.CANCELED;
+    }
+
+    public void startRepayment(LocalDateTime now) {
+        if (this.status != OrderStatus.PAYMENT_FAILED) {
+            throw new IllegalStateException("결제 실패 상태의 주문만 재결제할 수 있습니다. status=" + status);
+        }
+        if (isPaymentWindowClosed(now)) {
+            throw new IllegalStateException("결제 기한이 지난 주문입니다.");
+        }
+        this.status = OrderStatus.PAYMENT_PENDING;
+        this.paymentStartedAt = now;
+    }
+
+    public boolean isPaymentWindowClosed(LocalDateTime now) {
+        return !now.isBefore(createdAt.plus(PAYMENT_WINDOW));
     }
 
     public void ship() {
